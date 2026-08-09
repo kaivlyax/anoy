@@ -6,41 +6,59 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 
 const connectDB = require("./config/db");
+const profileRoutes = require("./routes/profileRoutes");
+
 
 const app = express();
 
-// =======================
-// Connect Database
-// =======================
-connectDB();
 
-// =======================
-// Global Middleware
-// =======================
-app.use(express.json());
+// Database
+const startServer = async () => {
 
-app.use(cors());
+    await connectDB();
 
-app.use(helmet());
 
-app.use(morgan("dev"));
+    // Middleware
+    app.use(express.json());
 
-// =======================
-// Health Check Route
-// =======================
-app.get("/", (req, res) => {
-    res.status(200).json({
-        success: true,
-        message: "Welcome to ANOY Backend API 🚀",
-        version: "1.0.0"
+    app.use(cors());
+
+    app.use(helmet());
+
+    app.use(morgan("dev"));
+
+
+    // Routes
+    app.use(
+        "/api/v1/profile",
+        profileRoutes
+    );
+
+
+    // Health Check
+    app.get("/", (req,res)=>{
+
+        res.status(200).json({
+            success:true,
+            message:"Welcome to ANOY Backend API 🚀",
+            version:"1.0.0"
+        });
+
     });
-});
 
-// =======================
-// Start Server
-// =======================
-const PORT = process.env.PORT || 5001;
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+    const PORT = process.env.PORT || 5001;
+
+
+    app.listen(PORT,()=>{
+
+        console.log(
+            `🚀 ANOY Server running on port ${PORT}`
+        );
+
+    });
+
+};
+
+
+startServer();
