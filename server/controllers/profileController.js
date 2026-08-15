@@ -1,59 +1,95 @@
 const Profile = require("../models/Profile");
 
 
-// Create Profile
+// =====================================================
+// CREATE PROFILE
+// =====================================================
+
 const createProfile = async (req, res) => {
 
     try {
 
-        const {
-            userId,
-            username,
-            displayName,
-            bio,
-            skills,
-            interests
-        } = req.body;
+        // Get identity from verified JWT
+        const userId = req.user._id;
 
 
+        // Check whether this user already has a profile
         const existingProfile = await Profile.findOne({
             userId
         });
 
 
-        if(existingProfile){
-            return res.status(400).json({
-                message:"Profile already exists"
+        if (existingProfile) {
+
+            return res.status(409).json({
+                success: false,
+                message: "Profile already exists"
             });
+
         }
 
 
+        // Get only profile fields from request
+        const {
+            displayName,
+            bio,
+            avatar,
+            coverImage,
+            skills,
+            interests,
+            privacy
+        } = req.body;
+
+
+        // Create profile using authenticated user's ID
         const profile = await Profile.create({
 
             userId,
-            username,
-            displayName,
-            bio,
-            skills,
-            interests
+
+            // Username comes from authenticated Identity
+            username: req.user.username,
+
+            displayName: displayName || "",
+
+            bio: bio || "",
+
+            avatar: avatar || "",
+
+            coverImage: coverImage || "",
+
+            skills: skills || [],
+
+            interests: interests || [],
+
+            privacy: privacy || "PUBLIC"
 
         });
 
 
-        res.status(201).json({
+        return res.status(201).json({
 
-            success:true,
+            success: true,
+
+            message: "Profile created successfully",
+
             profile
 
         });
 
 
-    } catch(error){
+    } catch (error) {
 
-        res.status(500).json({
+        console.error(
+            "Create profile error:",
+            error
+        );
 
-            success:false,
-            message:error.message
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Server error"
 
         });
 
@@ -63,87 +99,55 @@ const createProfile = async (req, res) => {
 
 
 
-// Get Profile
+// =====================================================
+// GET MY PROFILE
+// =====================================================
 
-const getProfile = async(req,res)=>{
+const getMyProfile = async (req, res) => {
 
-    try{
+    try {
 
+        // req.user comes from JWT middleware
         const profile = await Profile.findOne({
-
-            username:req.params.username
-
+            userId: req.user._id
         });
 
 
-        if(!profile){
+        if (!profile) {
 
             return res.status(404).json({
 
-                message:"Profile not found"
+                success: false,
+
+                message: "Profile not found"
 
             });
 
         }
 
 
-        res.json({
+        return res.status(200).json({
 
-            success:true,
+            success: true,
+
             profile
 
         });
 
 
-    }catch(error){
+    } catch (error) {
 
-        res.status(500).json({
-
-            message:error.message
-
-        });
-
-    }
-
-};
-
-
-
-// Update Profile
-
-const updateProfile = async(req,res)=>{
-
-    try{
-
-
-        const profile = await Profile.findOneAndUpdate(
-
-            {
-                username:req.params.username
-            },
-
-            req.body,
-
-            {
-                new:true
-            }
-
+        console.error(
+            "Get my profile error:",
+            error
         );
 
 
-        res.json({
+        return res.status(500).json({
 
-            success:true,
-            profile
+            success: false,
 
-        });
-
-
-    }catch(error){
-
-        res.status(500).json({
-
-            message:error.message
+            message: "Server error"
 
         });
 
@@ -152,11 +156,388 @@ const updateProfile = async(req,res)=>{
 };
 
 
+
+// =====================================================
+// GET PUBLIC PROFILE
+// =====================================================
+
+const getProfile = async (req, res) => {
+
+    try {
+
+        const username =
+            req.params.username.toLowerCase();
+
+
+        const profile = await Profile.findOne({
+            username
+        });
+
+
+        if (!profile) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Profile not found"
+
+            });
+
+        }
+
+
+        // Private profiles are not publicly visible
+        if (profile.privacy === "PRIVATE") {
+
+            return res.status(403).json({
+
+                success: false,
+
+                message: "This profile is private"
+
+            });
+
+        }
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            profile
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Get profile error:",
+            error
+        );
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Server error"
+
+        });
+
+    }
+
+};
+
+
+
+// =====================================================
+// UPDATE MY PROFILE
+// =====================================================
+
+const updateMyProfile = async (req, res) => {
+
+    try {
+
+        const profile = await Profile.findOne({
+            userId: req.user._id
+        });
+
+
+        if (!profile) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Profile not found"
+
+            });
+
+        }
+
+
+        // Only update fields explicitly provided
+        const {
+            displayName,
+            bio,
+            avatar,
+            coverImage,
+            skills,
+            interests,
+            privacy
+        } = req.body;
+
+
+        if (displayName !== undefined) {
+
+            profile.displayName =
+                displayName;
+
+        }
+
+
+        if (bio !== undefined) {
+
+            profile.bio =
+                bio;
+
+        }
+
+
+        if (avatar !== undefined) {
+
+            profile.avatar =
+                avatar;
+
+        }
+
+
+        if (coverImage !== undefined) {
+
+            profile.coverImage =
+                coverImage;
+
+        }
+
+
+        if (skills !== undefined) {
+
+            profile.skills =
+                skills;
+
+        }
+
+
+        if (interests !== undefined) {
+
+            profile.interests =
+                interests;
+
+        }
+
+
+        if (privacy !== undefined) {
+
+            profile.privacy =
+                privacy;
+
+        }
+
+
+        await profile.save();
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "Profile updated successfully",
+
+            profile
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Update my profile error:",
+            error
+        );
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Server error"
+
+        });
+
+    }
+
+};
+
+
+
+// =====================================================
+// UPDATE PROFILE BY USERNAME
+// =====================================================
+
+const updateProfile = async (req, res) => {
+
+    try {
+
+        const username =
+            req.params.username.toLowerCase();
+
+
+        // Find profile
+        const profile =
+            await Profile.findOne({
+                username
+            });
+
+
+        if (!profile) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Profile not found"
+
+            });
+
+        }
+
+
+        // =================================================
+        // AUTHORIZATION
+        // =================================================
+
+        if (
+            profile.userId.toString() !==
+            req.user._id.toString()
+        ) {
+
+            return res.status(403).json({
+
+                success: false,
+
+                message:
+                    "You can only edit your own profile"
+
+            });
+
+        }
+
+
+        // =================================================
+        // ALLOWED UPDATE FIELDS
+        // =================================================
+
+        const {
+            displayName,
+            bio,
+            avatar,
+            coverImage,
+            skills,
+            interests,
+            privacy
+        } = req.body;
+
+
+        if (displayName !== undefined) {
+
+            profile.displayName =
+                displayName;
+
+        }
+
+
+        if (bio !== undefined) {
+
+            profile.bio =
+                bio;
+
+        }
+
+
+        if (avatar !== undefined) {
+
+            profile.avatar =
+                avatar;
+
+        }
+
+
+        if (coverImage !== undefined) {
+
+            profile.coverImage =
+                coverImage;
+
+        }
+
+
+        if (skills !== undefined) {
+
+            profile.skills =
+                skills;
+
+        }
+
+
+        if (interests !== undefined) {
+
+            profile.interests =
+                interests;
+
+        }
+
+
+        if (privacy !== undefined) {
+
+            profile.privacy =
+                privacy;
+
+        }
+
+
+        await profile.save();
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "Profile updated successfully",
+
+            profile
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Update profile error:",
+            error
+        );
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Server error"
+
+        });
+
+    }
+
+};
+
+
+
+// =====================================================
+// EXPORT CONTROLLERS
+// =====================================================
 
 module.exports = {
 
     createProfile,
+
+    getMyProfile,
+
     getProfile,
+
+    updateMyProfile,
+
     updateProfile
 
 };

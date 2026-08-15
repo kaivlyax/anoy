@@ -6,10 +6,22 @@ const identitySchema = new mongoose.Schema(
 
         email: {
             type: String,
-            required: true,
+            required: function () {
+            return this.loginProvider === "email";
+        },
             unique: true,
+            sparse: true,
             lowercase: true,
             trim: true
+        },
+
+
+        username: {
+            type:String,
+            unique:true,
+            sparse:true,
+            lowercase:true,
+            trim:true
         },
 
 

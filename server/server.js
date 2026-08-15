@@ -1,5 +1,5 @@
 require("dotenv").config();
-
+const followRoutes = require("./routes/followRoutes");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -7,6 +7,7 @@ const morgan = require("morgan");
 
 const connectDB = require("./config/db");
 const profileRoutes = require("./routes/profileRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 
 const app = express();
@@ -33,6 +34,21 @@ const startServer = async () => {
         "/api/v1/profile",
         profileRoutes
     );
+
+    app.use(
+    "/api/v1/auth",
+    authRoutes
+);
+
+app.use(
+    "/api/v1/profile",
+    profileRoutes
+);
+
+app.use(
+    "/api/v1/follow",
+    followRoutes
+);
 
 
     // Health Check

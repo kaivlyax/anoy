@@ -2,40 +2,65 @@ const express = require("express");
 
 const router = express.Router();
 
-
 const {
-
-createProfile,
-getProfile,
-updateProfile
-
+    createProfile,
+    getMyProfile,
+    getProfile,
+    updateMyProfile,
+    updateProfile
 } = require("../controllers/profileController");
 
+const protect = require("../middleware/authMiddleware");
 
 
-// Create profile
-
-router.post(
-"/create",
-createProfile
-);
-
-
-// Get profile
+// =====================================================
+// AUTHENTICATED USER
+// =====================================================
 
 router.get(
-"/:username",
-getProfile
+    "/me",
+    protect,
+    getMyProfile
 );
 
-
-// Update profile
 
 router.put(
-"/:username",
-updateProfile
+    "/me",
+    protect,
+    updateMyProfile
 );
 
+
+// =====================================================
+// PROFILE CREATION
+// =====================================================
+
+router.post(
+    "/",
+    protect,
+    createProfile
+);
+
+
+// =====================================================
+// PUBLIC PROFILE
+// =====================================================
+
+router.get(
+    "/:username",
+    getProfile
+);
+
+
+// =====================================================
+// LEGACY USERNAME-BASED UPDATE
+// =====================================================
+
+router.put(
+    "/:username",
+    protect,
+    updateProfile
+);
 
 
 module.exports = router;
