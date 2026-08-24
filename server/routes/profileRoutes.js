@@ -3,11 +3,14 @@ const express = require("express");
 const router = express.Router();
 
 const {
+
     createProfile,
     getMyProfile,
     getProfile,
     updateMyProfile,
-    updateProfile
+    updateProfile,
+    getProfileStats
+
 } = require("../controllers/profileController");
 
 const protect = require("../middleware/authMiddleware");
@@ -39,6 +42,12 @@ router.post(
     "/",
     protect,
     createProfile
+);
+
+
+router.get(
+    "/:username/stats",
+    getProfileStats
 );
 
 

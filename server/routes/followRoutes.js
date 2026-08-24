@@ -9,10 +9,12 @@ const {
     getFollowing,
     getFollowRequests,
     acceptFollowRequest,
-    rejectFollowRequest
+    rejectFollowRequest,
+    getFollowStatus
 } = require("../controllers/followController");
 
-const protect = require("../middleware/authMiddleware");
+const protect =
+    require("../middleware/authMiddleware");
 
 
 // =====================================================
@@ -25,18 +27,27 @@ router.get(
     getFollowRequests
 );
 
-
 router.post(
     "/requests/:username/accept",
     protect,
     acceptFollowRequest
 );
 
-
 router.post(
     "/requests/:username/reject",
     protect,
     rejectFollowRequest
+);
+
+
+// =====================================================
+// FOLLOW STATUS
+// =====================================================
+
+router.get(
+    "/:username/status",
+    protect,
+    getFollowStatus
 );
 
 
@@ -49,7 +60,6 @@ router.post(
     protect,
     followUser
 );
-
 
 router.delete(
     "/:username",
@@ -66,7 +76,6 @@ router.get(
     "/:username/followers",
     getFollowers
 );
-
 
 router.get(
     "/:username/following",

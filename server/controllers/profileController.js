@@ -1,5 +1,5 @@
 const Profile = require("../models/Profile");
-
+const Follow = require("../models/Follow");
 
 // =====================================================
 // CREATE PROFILE
@@ -522,6 +522,78 @@ const updateProfile = async (req, res) => {
 
 };
 
+// =====================================================
+// GET PROFILE STATS
+// =====================================================
+
+const getProfileStats = async (req, res) => {
+
+    try {
+
+        const username =
+            req.params.username.toLowerCase();
+
+
+        // Check that the profile exists
+        const profile = await Profile.findOne({
+            username
+        });
+
+
+        if (!profile) {
+
+            return res.status(404).json({
+                success: false,
+                message: "Profile not found"
+            });
+
+        }
+
+
+        const followersCount =
+            await Follow.countDocuments({
+                following: profile.userId,
+                status: "ACCEPTED"
+            });
+
+
+        const followingCount =
+            await Follow.countDocuments({
+                follower: profile.userId,
+                status: "ACCEPTED"
+            });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            username: profile.username,
+
+            stats: {
+                followers: followersCount,
+                following: followingCount
+            }
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Get profile stats error:",
+            error
+        );
+
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+
+    }
+
+};
+
 
 
 // =====================================================
@@ -531,13 +603,10 @@ const updateProfile = async (req, res) => {
 module.exports = {
 
     createProfile,
-
     getMyProfile,
-
     getProfile,
-
     updateMyProfile,
-
-    updateProfile
+    updateProfile,
+    getProfileStats
 
 };

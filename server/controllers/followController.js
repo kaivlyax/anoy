@@ -1,7 +1,6 @@
 const Follow = require("../models/Follow");
-const Identity = require("../models/Identity");
 const Profile = require("../models/Profile");
-
+const Notification = require("../models/Notification");
 
 // =====================================================
 // FOLLOW USER
@@ -117,6 +116,15 @@ if (existingFollow) {
 
         await existingFollow.save();
 
+        await Notification.create({
+    recipient: targetUserId,
+    sender: req.user._id,
+    type: "FOLLOW",
+    message:
+        newStatus === "PENDING"
+            ? `${req.user.username} sent you a follow request again`
+            : `${req.user.username} followed you again`
+});
 
         return res.status(200).json({
 
@@ -153,6 +161,16 @@ if (existingFollow) {
             status
 
         });
+
+        await Notification.create({
+    recipient: targetUserId,
+    sender: req.user._id,
+    type: "FOLLOW",
+    message:
+        status === "PENDING"
+            ? `${req.user.username} sent you a follow request`
+            : `${req.user.username} followed you`
+});
 
 
         return res.status(201).json({
@@ -554,6 +572,14 @@ const acceptFollowRequest = async (req, res) => {
 
         request.status = "ACCEPTED";
 
+        await Notification.create({
+    recipient: requesterProfile.userId,
+    sender: req.user._id,
+    type: "FOLLOW_ACCEPTED",
+    message:
+        `${req.user.username} accepted your follow request`
+});
+
         await request.save();
 
 
@@ -684,6 +710,126 @@ const rejectFollowRequest = async (req, res) => {
 };
 
 
+// =====================================================
+// GET FOLLOW STATUS
+// =====================================================
+
+const getFollowStatus = async (req, res) => {
+
+    try {
+
+        const targetUsername =
+            req.params.username.toLowerCase();
+
+
+        // Cannot check relationship with a non-existing user
+        const targetProfile =
+            await Profile.findOne({
+                username: targetUsername
+            });
+
+
+        if (!targetProfile) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "User not found"
+
+            });
+
+        }
+
+
+        // Check whether a relationship exists
+
+        const follow =
+            await Follow.findOne({
+
+                follower: req.user._id,
+
+                following: targetProfile.userId
+
+            });
+
+
+        // No relationship
+
+        if (!follow) {
+
+            return res.status(200).json({
+
+                success: true,
+
+                relationship: "NOT_FOLLOWING"
+
+            });
+
+        }
+
+
+        // Pending follow request
+
+        if (follow.status === "PENDING") {
+
+            return res.status(200).json({
+
+                success: true,
+
+                relationship: "PENDING"
+
+            });
+
+        }
+
+
+        // Accepted follow
+
+        if (follow.status === "ACCEPTED") {
+
+            return res.status(200).json({
+
+                success: true,
+
+                relationship: "FOLLOWING"
+
+            });
+
+        }
+
+
+        // Rejected request
+
+        return res.status(200).json({
+
+            success: true,
+
+            relationship: "NOT_FOLLOWING"
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Get follow status error:",
+            error
+        );
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Server error"
+
+        });
+
+    }
+
+};
+
+
 module.exports = {
 
     followUser,
@@ -692,6 +838,7 @@ module.exports = {
     getFollowing,
     getFollowRequests,
     acceptFollowRequest,
-    rejectFollowRequest
+    rejectFollowRequest,
+    getFollowStatus
 
 };
