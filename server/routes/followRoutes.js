@@ -17,10 +17,6 @@ const protect =
     require("../middleware/authMiddleware");
 
 
-// =====================================================
-// FOLLOW REQUESTS
-// =====================================================
-
 router.get(
     "/requests",
     protect,
@@ -40,9 +36,6 @@ router.post(
 );
 
 
-// =====================================================
-// FOLLOW STATUS
-// =====================================================
 
 router.get(
     "/:username/status",
@@ -50,10 +43,6 @@ router.get(
     getFollowStatus
 );
 
-
-// =====================================================
-// FOLLOW / UNFOLLOW
-// =====================================================
 
 router.post(
     "/:username",
@@ -67,10 +56,6 @@ router.delete(
     unfollowUser
 );
 
-
-// =====================================================
-// FOLLOWERS / FOLLOWING
-// =====================================================
 
 router.get(
     "/:username/followers",

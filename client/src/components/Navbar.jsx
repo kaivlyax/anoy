@@ -1,12 +1,14 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useSocket } from "../context/SocketContext";
 import {
   HomeIcon,
   CompassIcon,
-  SearchIcon,
+  MessageCircleIcon,
   BellIcon,
   UserIcon,
-  LogOutIcon
+  LogOutIcon,
+  UsersIcon
 } from "./Icons";
 import NotificationBadge from "./NotificationBadge";
 
@@ -69,6 +71,7 @@ export function MobileNavbar() {
 
 export function MobileBottomNav() {
   const { user, unreadCount } = useAuth();
+  const { unreadMessagesCount } = useSocket();
   const username = user?.username || "user";
 
   return (
@@ -95,13 +98,27 @@ export function MobileBottomNav() {
       </NavLink>
 
       <NavLink
-        to="/search"
+        to="/messages"
         className={({ isActive }) =>
           `mobile-nav-item ${isActive ? "active" : ""}`
         }
-        aria-label="Search"
+        aria-label="Messages"
       >
-        <SearchIcon size={22} />
+        <MessageCircleIcon size={22} />
+        <NotificationBadge
+          count={unreadMessagesCount}
+          style={{ position: "absolute", top: 4, right: 8 }}
+        />
+      </NavLink>
+
+      <NavLink
+        to="/communities"
+        className={({ isActive }) =>
+          `mobile-nav-item ${isActive ? "active" : ""}`
+        }
+        aria-label="Communities"
+      >
+        <UsersIcon size={22} />
       </NavLink>
 
       <NavLink

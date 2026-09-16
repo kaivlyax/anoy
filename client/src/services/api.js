@@ -26,7 +26,6 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Clear expired token if unauthorized
       const isLoginRequest = error.config?.url?.includes("/auth/login");
       if (!isLoginRequest) {
         localStorage.removeItem("token");
@@ -44,7 +43,8 @@ api.interceptors.response.use(
 export const authApi = {
   login: (credentials) => api.post("/auth/login", credentials),
   register: (data) => api.post("/auth/register", data),
-  verifyEmail: (data) => api.post("/auth/verify-email", data)
+  verifyEmail: (data) => api.post("/auth/verify-email", data),
+  resendOtp: (data) => api.post("/auth/resend-otp", data)
 };
 
 export const postApi = {
@@ -101,6 +101,90 @@ export const notificationApi = {
 export const userApi = {
   searchUsers: (query) => api.get(`/users/search?q=${encodeURIComponent(query)}`),
   discoverUsers: (limit = 10) => api.get(`/users/discover?limit=${limit}`)
+};
+
+export const mediaApi = {
+  uploadImage: (formData) =>
+    api.post("/media/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    })
+};
+
+export const conversationApi = {
+  getConversations: () => api.get("/conversations"),
+  getOrCreateConversation: (data) => api.post("/conversations", data),
+  getMessages: (conversationId, page = 1, limit = 30) =>
+    api.get(`/conversations/${conversationId}/messages?page=${page}&limit=${limit}`),
+  sendMessage: (conversationId, data) =>
+    api.post(`/conversations/${conversationId}/messages`, data),
+  deleteMessage: (conversationId, messageId) =>
+    api.delete(`/conversations/${conversationId}/messages/${messageId}`),
+  getUnreadCount: () => api.get("/conversations/unread-count")
+};
+
+export const premiumApi = {
+  getCatalog: () => api.get("/premium/catalog"),
+  getInventory: () => api.get("/premium/inventory"),
+  getStatus: () => api.get("/premium/status"),
+  checkoutMock: (itemId) => api.post("/premium/checkout-mock", { itemId }),
+  activateCustomization: (type, itemId) => api.post("/premium/activate", { type, itemId }),
+  deactivateCustomization: (type) => api.post("/premium/deactivate", { type })
+};
+
+export const paymentApi = {
+  createOrder: (plan) => api.post("/payments/create-order", { plan }),
+  verifyPayment: (data) => api.post("/payments/verify", data),
+  getPaymentHistory: () => api.get("/payments/history")
+};
+
+
+export const communityApi = {
+  getCommunities: (params = {}) => api.get("/communities", { params }),
+  getCommunity: (slugOrId) => api.get(`/communities/${slugOrId}`),
+  createCommunity: (data) => api.post("/communities", data),
+  updateCommunity: (id, data) => api.put(`/communities/${id}`, data),
+  joinCommunity: (id) => api.post(`/communities/${id}/join`),
+  leaveCommunity: (id) => api.post(`/communities/${id}/leave`),
+  addModerator: (id, targetUserId) => api.post(`/communities/${id}/moderators`, { targetUserId }),
+  removeModerator: (id, targetUserId) => api.delete(`/communities/${id}/moderators/${targetUserId}`),
+  removeMember: (id, targetUserId) => api.delete(`/communities/${id}/members/${targetUserId}`),
+  boostCommunity: (id) => api.post(`/communities/${id}/boost`),
+  getBoosters: (id) => api.get(`/communities/${id}/boosters`),
+  updateDecorations: (id, data) => api.put(`/communities/${id}/decorations`, data),
+  unlockDecoration: (id, decorationId) => api.post(`/communities/${id}/decorations/unlock`, { decorationId })
+};
+
+export const communityChatApi = {
+  getMessages: (communityId, channel = "general", page = 1, limit = 50) =>
+    api.get(`/communities/${communityId}/messages?channel=${encodeURIComponent(channel)}&page=${page}&limit=${limit}`),
+  sendMessage: (communityId, data) =>
+    api.post(`/communities/${communityId}/messages`, data),
+  deleteMessage: (communityId, messageId) =>
+    api.delete(`/communities/${communityId}/messages/${messageId}`)
+};
+
+export const meetingRoomApi = {
+  getCommunityRooms: (communityId, params = {}) =>
+    api.get(`/communities/${communityId}/meeting-rooms`, { params }),
+  createRoom: (communityId, data) =>
+    api.post(`/communities/${communityId}/meeting-rooms`, data),
+  getRoom: (id) => api.get(`/meeting-rooms/${id}`),
+  joinRoom: (id, passcode = "") => api.post(`/meeting-rooms/${id}/join`, { passcode }),
+  leaveRoom: (id) => api.post(`/meeting-rooms/${id}/leave`),
+  deleteRoom: (id) => api.delete(`/meeting-rooms/${id}`)
+};
+
+export const studyRoomApi = meetingRoomApi;
+
+export const searchApi = {
+  search: (q, type = "all", limit = 20) =>
+    api.get(`/search?q=${encodeURIComponent(q)}&type=${type}&limit=${limit}`),
+  searchUsers: (q, limit = 20) =>
+    api.get(`/search/users?q=${encodeURIComponent(q)}&limit=${limit}`),
+  searchCommunities: (q, limit = 20) =>
+    api.get(`/search/communities?q=${encodeURIComponent(q)}&limit=${limit}`),
+  searchPosts: (q, limit = 20) =>
+    api.get(`/search/posts?q=${encodeURIComponent(q)}&limit=${limit}`)
 };
 
 export default api;

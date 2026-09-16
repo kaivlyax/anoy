@@ -145,6 +145,21 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Resend Email OTP handler
+  const resendOTP = async (email) => {
+    try {
+      const response = await authApi.resendOtp({ email });
+      return {
+        success: true,
+        message: response.data.message || "Verification code sent to your email!"
+      };
+    } catch (err) {
+      const message = err.response?.data?.message || "Failed to resend verification code.";
+      const retryAfter = err.response?.data?.retryAfter;
+      return { success: false, error: message, retryAfter };
+    }
+  };
+
   // Logout handler
   const logout = () => {
     localStorage.removeItem("token");
@@ -177,6 +192,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     verifyEmail,
+    resendOTP,
     logout,
     refreshProfile,
     fetchUnreadCount,

@@ -64,6 +64,56 @@ const profileSchema = new mongoose.Schema(
                 "PRIVATE"
             ],
             default: "PUBLIC"
+        },
+
+        // Premium / Pro System
+        isPro: {
+            type: Boolean,
+            default: false,
+            index: true
+        },
+
+        proPlan: {
+            type: String,
+            enum: [
+                "FREE",
+                "PRO_MONTHLY",
+                "PRO_ANNUAL",
+                "PRO_LIFETIME"
+            ],
+            default: "FREE"
+        },
+
+        proExpiresAt: {
+            type: Date,
+            default: null
+        },
+
+        // Active Customizations
+        avatarDecoration: {
+            type: String,
+            default: ""
+        },
+
+        profileDecoration: {
+            type: String,
+            default: ""
+        },
+
+        profileTheme: {
+            type: String,
+            default: "default"
+        },
+
+        // Unlocked Items & Packs
+        unlockedDecorations: {
+            type: [String],
+            default: []
+        },
+
+        unlockedEmojiPacks: {
+            type: [String],
+            default: ["default"]
         }
     },
     {

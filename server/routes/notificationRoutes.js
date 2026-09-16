@@ -14,35 +14,30 @@ const {
 } = require("../controllers/notificationController");
 
 
-// Get my notifications
 router.get(
     "/",
     protect,
     getMyNotifications
 );
 
-// Get unread notification count
 router.get(
     "/unread-count",
     protect,
     getUnreadNotificationCount
 );
 
-// Mark all as read
 router.patch(
     "/read-all",
     protect,
     markAllNotificationsAsRead
 );
 
-// Mark one notification as read
 router.patch(
     "/:id/read",
     protect,
     markNotificationAsRead
 );
 
-// Delete one notification
 
 router.delete(
     "/:id",

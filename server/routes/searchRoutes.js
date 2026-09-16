@@ -1,20 +1,19 @@
 const express = require("express");
-
 const router = express.Router();
-
+const protect = require("../middleware/authMiddleware");
 const {
-    searchUsers
+    searchUsers,
+    searchCommunities,
+    searchPosts,
+    unifiedSearch
 } = require("../controllers/searchController");
 
+// Unified search
+router.get("/", protect, unifiedSearch);
 
-// =====================================================
-// SEARCH USERS
-// =====================================================
-
-router.get(
-    "/users",
-    searchUsers
-);
-
+// Category search routes
+router.get("/users", protect, searchUsers);
+router.get("/communities", protect, searchCommunities);
+router.get("/posts", protect, searchPosts);
 
 module.exports = router;

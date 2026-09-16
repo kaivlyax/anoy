@@ -1,24 +1,28 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
-import { profileApi, followApi, postApi } from "../services/api";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { profileApi, followApi, postApi, conversationApi } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import PostCard from "../components/PostCard";
 import EditProfileModal from "../components/EditProfileModal";
 import FollowListModal from "../components/FollowListModal";
+import ProBadge from "../components/ProBadge";
+import AvatarFrame from "../components/AvatarFrame";
 import {
   LockIcon,
   GlobeIcon,
   LoaderIcon,
   AlertCircleIcon,
   UsersIcon,
-  MessageCircleIcon
+  MessageCircleIcon,
+  SparklesIcon
 } from "../components/Icons";
 
 function Profile() {
   const { username: paramUsername } = useParams();
   const { user, profile: myProfile, refreshProfile } = useAuth();
   const { addToast } = useToast();
+  const navigate = useNavigate();
 
   const isOwnProfile = !paramUsername || paramUsername.toLowerCase() === user?.username?.toLowerCase();
   const targetUsername = paramUsername || user?.username;
@@ -30,6 +34,7 @@ function Profile() {
   const [loading, setLoading] = useState(true);
   const [postsLoading, setPostsLoading] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [startingChat, setStartingChat] = useState(false);
   const [error, setError] = useState("");
   const [isPrivateRestricted, setIsPrivateRestricted] = useState(false);
 
@@ -192,6 +197,26 @@ function Profile() {
     setUserPosts((prev) => prev.filter((p) => p._id !== deletedPostId));
   };
 
+  const handleStartChat = async () => {
+    if (startingChat || isOwnProfile) return;
+    try {
+      setStartingChat(true);
+      const response = await conversationApi.getOrCreateConversation({
+        username: targetUsername
+      });
+      if (response.data.success && response.data.conversation) {
+        navigate(`/messages?conversationId=${response.data.conversation._id}`);
+      }
+    } catch (err) {
+      addToast(
+        err.response?.data?.message || "Failed to start conversation",
+        "error"
+      );
+    } finally {
+      setStartingChat(false);
+    }
+  };
+
   const isFollowing = followStatus === "FOLLOWING";
   const isPending = followStatus === "PENDING";
 
@@ -274,26 +299,33 @@ function Profile() {
 
               {/* Avatar & Action Button Row */}
               <div className="profile-header-actions-bar">
-                <div className="profile-large-avatar">
-                  {profile.avatar ? (
-                    <img
-                      src={profile.avatar}
-                      alt={profile.username}
-                      className="profile-avatar-img"
-                      onError={(e) => {
-                        e.target.style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    (profile.displayName || profile.username || "U")
-                      .charAt(0)
-                      .toUpperCase()
-                  )}
+                <div className="profile-large-avatar-wrapper">
+                  <AvatarFrame
+                    src={profile.avatar}
+                    fallbackText={profile.displayName || profile.username || "U"}
+                    size={110}
+                    frame={profile.avatarDecoration}
+                  />
                 </div>
 
                 <div className="profile-actions-group">
                   {isOwnProfile ? (
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <Link
+                        to="/store"
+                        className="composer-submit-btn"
+                        style={{
+                          background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+                          color: "#ffffff",
+                          border: "none",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6
+                        }}
+                      >
+                        <SparklesIcon size={16} />
+                        <span>Customize Look</span>
+                      </Link>
                       {profile.privacy === "PRIVATE" && (
                         <Link
                           to="/follow-requests"
@@ -321,28 +353,53 @@ function Profile() {
                       </button>
                     </div>
                   ) : (
-                    <button
-                      className={`follow-toggle-btn ${
-                        isFollowing
-                          ? "following"
-                          : isPending
-                          ? "requested"
-                          : "follow"
-                      }`}
-                      style={{ padding: "8px 22px", fontSize: 14 }}
-                      disabled={followBusy}
-                      onClick={handleFollowToggle}
-                    >
-                      {followBusy ? (
-                        <LoaderIcon size={14} />
-                      ) : isFollowing ? (
-                        "Following"
-                      ) : isPending ? (
-                        "Requested"
-                      ) : (
-                        "Follow"
-                      )}
-                    </button>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <button
+                        className="composer-submit-btn"
+                        style={{
+                          background: "var(--bg-card)",
+                          border: "1px solid var(--border-light)",
+                          color: "var(--text-main)",
+                          padding: "8px 16px",
+                          fontSize: 14
+                        }}
+                        disabled={startingChat}
+                        onClick={handleStartChat}
+                        aria-label={`Message @${targetUsername}`}
+                      >
+                        {startingChat ? (
+                          <LoaderIcon size={14} />
+                        ) : (
+                          <>
+                            <MessageCircleIcon size={16} />
+                            <span>Message</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        className={`follow-toggle-btn ${
+                          isFollowing
+                            ? "following"
+                            : isPending
+                            ? "requested"
+                            : "follow"
+                        }`}
+                        style={{ padding: "8px 22px", fontSize: 14 }}
+                        disabled={followBusy}
+                        onClick={handleFollowToggle}
+                      >
+                        {followBusy ? (
+                          <LoaderIcon size={14} />
+                        ) : isFollowing ? (
+                          "Following"
+                        ) : isPending ? (
+                          "Requested"
+                        ) : (
+                          "Follow"
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -350,10 +407,11 @@ function Profile() {
 
             {/* Profile Meta Details */}
             <div className="profile-meta-content">
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <h1 className="profile-display-name">
                   {profile.displayName || profile.username}
                 </h1>
+                {profile.isPro && <ProBadge size="md" />}
                 <span
                   className="post-visibility-badge"
                   style={{ fontSize: 12, padding: "3px 8px" }}
