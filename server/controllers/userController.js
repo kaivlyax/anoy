@@ -87,7 +87,7 @@ const searchUsers = async (req, res) => {
             })
 
             .select(
-                "username displayName bio avatar skills interests"
+                "username displayName bio avatar skills interests isPro avatarDecoration"
             )
 
             .limit(20);
@@ -150,7 +150,7 @@ const discoverUsers = async (req, res) => {
             })
 
             .select(
-                "username displayName bio avatar skills interests"
+                "username displayName bio avatar skills interests isPro avatarDecoration"
             )
 
             .sort({

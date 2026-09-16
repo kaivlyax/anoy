@@ -1,5 +1,6 @@
 const Profile = require("../models/Profile");
 const Follow = require("../models/Follow");
+const { isProfilePro } = require("../middleware/premiumMiddleware");
 
 // =====================================================
 // CREATE PROFILE
@@ -114,99 +115,67 @@ const getMyProfile = async (req, res) => {
 
 
         if (!profile) {
-
             return res.status(404).json({
-
                 success: false,
-
                 message: "Profile not found"
-
             });
-
         }
 
+        const validPro = isProfilePro(profile);
+        if (profile.isPro && !validPro) {
+            profile.isPro = false;
+            profile.proPlan = "FREE";
+            await profile.save().catch(() => {});
+        }
+
+        const profObj = profile.toObject();
+        profObj.isPro = validPro;
 
         return res.status(200).json({
-
             success: true,
-
-            profile
-
+            profile: profObj
         });
-
-
     } catch (error) {
-
-        console.error(
-            "Get my profile error:",
-            error
-        );
-
-
+        console.error("Get my profile error:", error);
         return res.status(500).json({
-
             success: false,
-
             message: "Server error"
-
         });
-
     }
-
 };
-
-
 
 // =====================================================
 // GET PUBLIC PROFILE
 // =====================================================
-
 const getProfile = async (req, res) => {
-
     try {
-
-        const username =
-            req.params.username.toLowerCase();
-
-
+        const username = req.params.username.toLowerCase();
         const profile = await Profile.findOne({
             username
         });
 
-
         if (!profile) {
-
             return res.status(404).json({
-
                 success: false,
-
                 message: "Profile not found"
-
             });
-
         }
-
 
         // Private profiles are not publicly visible
         if (profile.privacy === "PRIVATE") {
-
             return res.status(403).json({
-
                 success: false,
-
                 message: "This profile is private"
-
             });
-
         }
 
+        const validPro = isProfilePro(profile);
+        const profObj = profile.toObject();
+        profObj.isPro = validPro;
 
         return res.status(200).json({
-
             success: true,
-
-            profile
-
+            profile: profObj
         });
 
 

@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
-import { LoaderIcon, AlertCircleIcon } from "../components/Icons";
+import { LoaderIcon, AlertCircleIcon, CheckIcon } from "../components/Icons";
 
 function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, register, verifyEmail } = useAuth();
+  const { login, register, verifyEmail, resendOTP } = useAuth();
   const { addToast } = useToast();
 
   const [mode, setMode] = useState("login"); // 'login' | 'register' | 'verify'
@@ -20,15 +20,37 @@ function Login() {
   const [otp, setOtp] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
 
   const from = location.state?.from?.pathname || "/";
 
+  // Countdown timer for OTP resend cooldown
+  useEffect(() => {
+    let timer;
+    if (resendCooldown > 0) {
+      timer = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [resendCooldown]);
+
   // Handle Login Submit
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setInfoMessage("");
     setLoading(true);
 
     const result = await login(identifier, password);
@@ -42,6 +64,7 @@ function Login() {
       if (result.error.toLowerCase().includes("verify your email")) {
         setEmail(identifier);
         setMode("verify");
+        setResendCooldown(60);
       }
     }
   };
@@ -50,14 +73,16 @@ function Login() {
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setInfoMessage("");
     setLoading(true);
 
     const result = await register(email, username, password);
     setLoading(false);
 
     if (result.success) {
-      addToast("Account created! Check console for OTP.", "success");
-      setInfoMessage("A verification code was generated for your email.");
+      addToast("Account created! A verification code was sent to your email.", "success");
+      setInfoMessage(`We sent a 6-digit verification code to ${email}`);
+      setResendCooldown(60);
       setMode("verify");
     } else {
       setError(result.error);
@@ -68,13 +93,14 @@ function Login() {
   const handleVerifyOtpSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setInfoMessage("");
     setLoading(true);
 
     const result = await verifyEmail(email, otp.trim());
     setLoading(false);
 
     if (result.success) {
-      addToast("Email verified! Signing you in...", "success");
+      addToast("Email verified successfully!", "success");
       if (password) {
         setLoading(true);
         const logRes = await login(username || email, password);
@@ -86,9 +112,32 @@ function Login() {
       }
       setMode("login");
       setIdentifier(username || email);
-      setInfoMessage("Email verified! You can now sign in.");
+      setInfoMessage("Email verified! You can now sign in with your credentials.");
     } else {
       setError(result.error);
+    }
+  };
+
+  // Handle Resend OTP Click
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || resendLoading || !email.trim()) return;
+
+    setError("");
+    setResendLoading(true);
+
+    const result = await resendOTP(email.trim());
+    setResendLoading(false);
+
+    if (result.success) {
+      addToast("Verification code resent! Please check your inbox.", "success");
+      setInfoMessage(`A fresh 6-digit code has been sent to ${email}`);
+      setResendCooldown(60);
+      setOtp("");
+    } else {
+      setError(result.error);
+      if (result.retryAfter) {
+        setResendCooldown(result.retryAfter);
+      }
     }
   };
 
@@ -106,7 +155,7 @@ function Login() {
           <p className="auth-subtitle">
             {mode === "login" && "Sign in to access your personalized feed"}
             {mode === "register" && "Create an account to connect with creators"}
-            {mode === "verify" && `Enter the 6-digit OTP sent to ${email}`}
+            {mode === "verify" && `Enter the 6-digit verification code sent to your email`}
           </p>
         </div>
 
@@ -147,8 +196,9 @@ function Login() {
         )}
 
         {infoMessage && (
-          <div className="auth-success-banner" style={{ marginBottom: 16 }}>
-            {infoMessage}
+          <div className="auth-success-banner" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+            <CheckIcon size={18} />
+            <span>{infoMessage}</span>
           </div>
         )}
 
@@ -258,7 +308,10 @@ function Login() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="otp-code">6-Digit Verification Code</label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <label htmlFor="otp-code" style={{ margin: 0 }}>6-Digit Verification Code</label>
+                <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Expires in 10 mins</span>
+              </div>
               <div className="otp-box-container">
                 <input
                   id="otp-code"
@@ -282,13 +335,35 @@ function Login() {
               {loading ? <LoaderIcon size={18} /> : "Verify & Complete"}
             </button>
 
-            <div style={{ textAlign: "center", marginTop: 12 }}>
+            {/* Resend OTP Button & Cooldown */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border-color)" }}>
               <button
                 type="button"
-                style={{ color: "var(--text-dim)", fontSize: 13 }}
+                onClick={handleResendOtp}
+                disabled={resendCooldown > 0 || resendLoading}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: resendCooldown > 0 ? "var(--text-dim)" : "var(--accent)",
+                  fontSize: 13,
+                  cursor: resendCooldown > 0 ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: 0
+                }}
+              >
+                {resendLoading && <LoaderIcon size={14} />}
+                {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Didn't receive code? Resend OTP"}
+              </button>
+
+              <button
+                type="button"
+                style={{ color: "var(--text-dim)", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
                 onClick={() => {
                   setMode("login");
                   setError("");
+                  setInfoMessage("");
                 }}
               >
                 ← Back to Sign In

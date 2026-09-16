@@ -1,19 +1,23 @@
 import { NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useSocket } from "../context/SocketContext";
 import {
   HomeIcon,
   CompassIcon,
   SearchIcon,
   BellIcon,
+  MessageCircleIcon,
   UserIcon,
   UsersIcon,
   LogOutIcon,
-  PlusIcon
+  PlusIcon,
+  SparklesIcon
 } from "./Icons";
 import NotificationBadge from "./NotificationBadge";
 
 function Sidebar({ onOpenPostComposer }) {
   const { user, profile, logout, unreadCount } = useAuth();
+  const { unreadMessagesCount } = useSocket();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -71,6 +75,29 @@ function Sidebar({ onOpenPostComposer }) {
           </NavLink>
 
           <NavLink
+            to="/messages"
+            className={({ isActive }) =>
+              `nav-item ${isActive ? "active" : ""}`
+            }
+            aria-label="Messages"
+          >
+            <MessageCircleIcon size={22} />
+            <span>Messages</span>
+            <NotificationBadge count={unreadMessagesCount} />
+          </NavLink>
+
+          <NavLink
+            to="/communities"
+            className={({ isActive }) =>
+              `nav-item ${isActive ? "active" : ""}`
+            }
+            aria-label="Communities"
+          >
+            <UsersIcon size={22} />
+            <span>Communities</span>
+          </NavLink>
+
+          <NavLink
             to="/notifications"
             className={({ isActive }) =>
               `nav-item ${isActive ? "active" : ""}`
@@ -80,6 +107,17 @@ function Sidebar({ onOpenPostComposer }) {
             <BellIcon size={22} />
             <span>Notifications</span>
             <NotificationBadge count={unreadCount} />
+          </NavLink>
+
+          <NavLink
+            to="/store"
+            className={({ isActive }) =>
+              `nav-item ${isActive ? "active" : ""}`
+            }
+            aria-label="ANOY Pro Store"
+          >
+            <SparklesIcon size={22} className="text-accent" />
+            <span style={{ background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", fontWeight: 700 }}>ANOY Pro</span>
           </NavLink>
 
           {profile?.privacy === "PRIVATE" && (

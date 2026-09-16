@@ -23,9 +23,7 @@ const protect = async (req, res, next) => {
         }
 
 
-        // =========================
-        // Check Bearer format
-        // =========================
+       
 
         if (!authHeader.startsWith("Bearer ")) {
 
@@ -37,9 +35,6 @@ const protect = async (req, res, next) => {
         }
 
 
-        // =========================
-        // Extract token
-        // =========================
 
         const token =
             authHeader.split(" ")[1];
@@ -55,9 +50,7 @@ const protect = async (req, res, next) => {
         }
 
 
-        // =========================
-        // Verify JWT
-        // =========================
+        
 
         const decoded =
             jwt.verify(
@@ -66,9 +59,7 @@ const protect = async (req, res, next) => {
             );
 
 
-        // =========================
-        // Find user
-        // =========================
+      
 
         const user = await Identity.findById(
             decoded.userId
@@ -85,9 +76,7 @@ const protect = async (req, res, next) => {
         }
 
 
-        // =========================
-        // Check account status
-        // =========================
+       
 
         if (user.status === "BANNED") {
 
@@ -109,9 +98,7 @@ const protect = async (req, res, next) => {
         }
 
 
-        // =========================
-        // Attach user to request
-        // =========================
+       
 
         req.user = user;
 

@@ -32,8 +32,6 @@ const followUser = async (req, res) => {
         }
 
 
-        // Find target user's profile
-
         const targetProfile =
             await Profile.findOne({
                 username: targetUsername
@@ -71,7 +69,7 @@ const followUser = async (req, res) => {
 
 if (existingFollow) {
 
-    // Already following
+
     if (existingFollow.status === "ACCEPTED") {
 
         return res.status(409).json({
@@ -85,7 +83,6 @@ if (existingFollow) {
     }
 
 
-    // Request is already waiting
     if (existingFollow.status === "PENDING") {
 
         return res.status(409).json({
@@ -99,8 +96,6 @@ if (existingFollow) {
     }
 
 
-    // Previous request was rejected
-    // Allow the user to send a new request
 
     if (existingFollow.status === "REJECTED") {
 
@@ -143,8 +138,6 @@ if (existingFollow) {
 
 }
 
-
-        // Determine status based on privacy
 
         const status =
             targetProfile.privacy === "PRIVATE"
@@ -207,11 +200,6 @@ if (existingFollow) {
 
 };
 
-
-
-// =====================================================
-// UNFOLLOW USER
-// =====================================================
 
 const unfollowUser = async (req, res) => {
 
@@ -292,11 +280,6 @@ const unfollowUser = async (req, res) => {
 
 };
 
-
-
-// =====================================================
-// GET FOLLOWERS
-// =====================================================
 
 const getFollowers = async (req, res) => {
 

@@ -2,6 +2,7 @@ const Post = require("../models/Post");
 const Like = require("../models/Like");
 const Comment = require("../models/Comment");
 const Follow = require("../models/Follow");
+const Profile = require("../models/Profile");
 // =====================================================
 // CREATE POST
 // =====================================================
@@ -116,54 +117,38 @@ const getPosts = async (req, res) => {
         .limit(limit);
 
 
-        // Add like information to every post
+        // Pre-fetch author profiles for avatar & badge hydration
+        const authorProfiles = await Profile.find({
+            userId: { $in: posts.map((p) => p.author?._id).filter(Boolean) }
+        });
+        const profileMap = new Map(authorProfiles.map((p) => [p.userId.toString(), p]));
 
         const postsWithDetails = await Promise.all(
+            posts.map(async (post) => {
+                const likeCount = await Like.countDocuments({ post: post._id });
+                const existingLike = await Like.findOne({ post: post._id, user: req.user._id });
+                const commentCount = await Comment.countDocuments({ post: post._id, isDeleted: false });
 
-    posts.map(async (post) => {
+                const p = post.author ? profileMap.get(post.author._id.toString()) : null;
+                const authorData = post.author
+                    ? {
+                          ...post.author.toObject(),
+                          displayName: p?.displayName || post.author.username,
+                          avatar: p?.avatar || "",
+                          isPro: p?.isPro || false,
+                          avatarDecoration: p?.avatarDecoration || ""
+                      }
+                    : null;
 
-        const likeCount =
-            await Like.countDocuments({
-                post: post._id
-            });
-
-
-        const existingLike =
-            await Like.findOne({
-
-                post: post._id,
-
-                user: req.user._id
-
-            });
-
-
-        const commentCount =
-            await Comment.countDocuments({
-
-                post: post._id,
-
-                isDeleted: false
-
-            });
-
-
-        return {
-
-            ...post.toObject(),
-
-            likeCount,
-
-            isLiked:
-                existingLike !== null,
-
-            commentCount
-
-        };
-
-    })
-
-);
+                return {
+                    ...post.toObject(),
+                    author: authorData,
+                    likeCount,
+                    isLiked: existingLike !== null,
+                    commentCount
+                };
+            })
+        );
 
 
         return res.status(200).json({
@@ -615,8 +600,13 @@ const getPersonalizedFeed = async (req, res) => {
 
 
         // =========================
-        // ADD LIKE + COMMENT DETAILS
+        // ADD LIKE + COMMENT DETAILS & AUTHOR PROFILE
         // =========================
+
+        const authorProfiles = await Profile.find({
+            userId: { $in: posts.map((p) => p.author?._id).filter(Boolean) }
+        });
+        const profileMap = new Map(authorProfiles.map((p) => [p.userId.toString(), p]));
 
         const postsWithDetails =
             await Promise.all(
@@ -650,10 +640,22 @@ const getPersonalizedFeed = async (req, res) => {
 
                         });
 
+                    const p = post.author ? profileMap.get(post.author._id.toString()) : null;
+                    const authorData = post.author
+                        ? {
+                              ...post.author.toObject(),
+                              displayName: p?.displayName || post.author.username,
+                              avatar: p?.avatar || "",
+                              isPro: p?.isPro || false,
+                              avatarDecoration: p?.avatarDecoration || ""
+                          }
+                        : null;
 
                     return {
 
                         ...post.toObject(),
+
+                        author: authorData,
 
                         likeCount,
 

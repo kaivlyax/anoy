@@ -37,17 +37,12 @@ router.post(
     createPost
 );
 
-
-// GET FEED
 router.get(
     "/",
     protect,
     getPosts
 );
 
-// =====================================================
-// PERSONALIZED FEED
-// =====================================================
 
 router.get(
     "/feed",
@@ -56,7 +51,6 @@ router.get(
 );
 
 
-// LIKE POST
 router.post(
     "/:postId/like",
     protect,
@@ -64,14 +58,12 @@ router.post(
 );
 
 
-// UNLIKE POST
 router.delete(
     "/:postId/like",
     protect,
     unlikePost
 );
 
-// COMMENT
 router.post(
     "/:postId/comments",
     protect,
@@ -95,14 +87,12 @@ router.delete(
     deleteComment
 );
 
-// GET SINGLE POST
 router.get(
     "/:id",
     getPostById
 );
 
 
-// UPDATE POST
 router.patch(
     "/:id",
     protect,
@@ -110,7 +100,6 @@ router.patch(
 );
 
 
-// DELETE POST
 router.delete(
     "/:id",
     protect,

@@ -66,8 +66,20 @@ const identitySchema = new mongoose.Schema(
             type: String
         },
 
+        verificationOTPHash: {
+            type: String
+        },
 
         verificationOTPExpiry: {
+            type: Date
+        },
+
+        verificationAttempts: {
+            type: Number,
+            default: 0
+        },
+
+        lastOTPResentAt: {
             type: Date
         },
 
