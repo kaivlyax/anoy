@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { userApi, followApi } from "../services/api";
+import { userApi, followApi, postApi } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { SearchIcon, LoaderIcon } from "./Icons";
+import { SearchIcon, LoaderIcon, SparklesIcon } from "./Icons";
 import { useToast } from "../context/ToastContext";
 
 function RightSidebar() {
@@ -16,6 +16,34 @@ function RightSidebar() {
   const [followStatuses, setFollowStatuses] = useState({});
   const [processingUser, setProcessingUser] = useState(null);
 
+  // Real Dynamic Trending Topics from ANOY Database
+  const [trendingTopics, setTrendingTopics] = useState([]);
+  const [trendingLoading, setTrendingLoading] = useState(true);
+
+  // Fetch real trending topics from database
+  useEffect(() => {
+    let isMounted = true;
+    const fetchTrending = async () => {
+      try {
+        setTrendingLoading(true);
+        const res = await postApi.getTrendingTopics(5);
+        if (isMounted && res.data.success) {
+          setTrendingTopics(res.data.trending || []);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch trending topics:", err);
+      } finally {
+        if (isMounted) setTrendingLoading(false);
+      }
+    };
+
+    fetchTrending();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Fetch real discoverable users
   useEffect(() => {
     let isMounted = true;
     const fetchDiscover = async () => {
@@ -60,8 +88,12 @@ function RightSidebar() {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}&tab=posts`);
     }
+  };
+
+  const handleTrendingClick = (tag) => {
+    navigate(`/search?q=${encodeURIComponent(tag)}&tab=posts`);
   };
 
   const handleFollowToggle = async (targetUsername) => {
@@ -111,25 +143,95 @@ function RightSidebar() {
   };
 
   return (
-    <aside className="right-sidebar">
+    <aside className="right-sidebar" aria-label="Discovery and Trends Sidebar">
       {/* Search Input Bar */}
-      <form onSubmit={handleSearchSubmit} className="search-box-container">
+      <form onSubmit={handleSearchSubmit} className="search-box-container-modern glass-panel">
         <span className="search-icon-adornment">
           <SearchIcon size={16} />
         </span>
         <input
           type="text"
-          className="search-box-input"
-          placeholder="Search ANOY..."
+          className="search-box-input-modern"
+          placeholder="Search students, topics, Bharat..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           aria-label="Quick search query"
         />
       </form>
 
-      {/* Suggested Users Widget */}
-      <div className="widget-card">
-        <h3 className="widget-title">Who to follow</h3>
+      {/* Real Dynamic Trending in India Widget */}
+      <div className="widget-card-modern glass-panel">
+        <div className="widget-header-row">
+          <h3 className="widget-title-modern">Trending in India</h3>
+          <span className="widget-badge-flag">🇮🇳 Live</span>
+        </div>
+
+        {trendingLoading ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[1, 2, 3].map((n) => (
+              <div
+                key={n}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  padding: "6px 8px"
+                }}
+              >
+                <div className="skeleton-box" style={{ width: 80, height: 10 }} />
+                <div className="skeleton-box" style={{ width: 140, height: 14 }} />
+                <div className="skeleton-box" style={{ width: 60, height: 10 }} />
+              </div>
+            ))}
+          </div>
+        ) : trendingTopics.length === 0 ? (
+          <div className="trending-empty-state" style={{ padding: "8px 4px" }}>
+            <p style={{ color: "var(--text-dim)", fontSize: 13, lineHeight: 1.4 }}>
+              Trending will appear as the ANOY community grows.
+            </p>
+            <p style={{ color: "#FF9933", fontSize: 12, marginTop: 6, fontWeight: 600 }}>
+              Start a trend with a #hashtag in your post!
+            </p>
+          </div>
+        ) : (
+          <div className="trending-topics-list">
+            {trendingTopics.map((topic, idx) => {
+              const displayTag = topic.tag || topic.topic;
+              const countText = `${topic.postCount} ${
+                topic.postCount === 1 ? "post" : "posts"
+              }`;
+              const engagementText =
+                topic.engagement > 0
+                  ? ` • ${topic.engagement} interactions`
+                  : "";
+
+              return (
+                <div
+                  key={idx}
+                  className="trending-topic-item"
+                  onClick={() => handleTrendingClick(displayTag)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleTrendingClick(displayTag);
+                  }}
+                  title={`View posts for ${displayTag}`}
+                >
+                  <div className="trending-meta">
+                    <span className="trending-category">Trending on ANOY</span>
+                    <span className="trending-tag">{displayTag}</span>
+                  </div>
+                  <span className="trending-count">{countText}{engagementText}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Suggested Students / Who to follow */}
+      <div className="widget-card-modern glass-panel">
+        <h3 className="widget-title-modern">Who to follow</h3>
 
         {loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -173,7 +275,7 @@ function RightSidebar() {
           </div>
         ) : discoverUsers.length === 0 ? (
           <p style={{ color: "var(--text-dim)", fontSize: 13 }}>
-            No new user suggestions right now.
+            No new suggestions right now.
           </p>
         ) : (
           <div className="discover-user-list">
@@ -248,21 +350,31 @@ function RightSidebar() {
         )}
       </div>
 
+      {/* Different Stories. One India. Inspiration Card */}
+      <div className="bharat-quote-card glass-panel">
+        <div className="bharat-quote-header">
+          <SparklesIcon size={16} style={{ color: "#FF9933" }} />
+          <span>ANOY Inspiration</span>
+        </div>
+        <p className="bharat-quote-text">
+          &ldquo;Different Stories. Different Campuses. One India.&rdquo;
+        </p>
+        <div className="bharat-quote-sub">
+          Connecting universities from Kashmir to Kanyakumari.
+        </div>
+      </div>
+
       {/* Mini Footer */}
-      <div
-        style={{
-          padding: "0 8px",
-          color: "var(--text-dim)",
-          fontSize: 12,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 10
-        }}
-      >
+      <div className="right-sidebar-footer">
         <span>© 2026 ANOY</span>
-        <span>Privacy</span>
-        <span>Terms</span>
-        <span>Explore</span>
+        <span>•</span>
+        <span>Apna Social Space</span>
+        <span>•</span>
+        <Link to="/search">Search</Link>
+        <span>•</span>
+        <Link to="/communities">Communities</Link>
+        <span>•</span>
+        <Link to="/ai">ANOY AI</Link>
       </div>
     </aside>
   );

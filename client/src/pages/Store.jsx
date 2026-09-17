@@ -242,6 +242,9 @@ export default function Store() {
     }
   };
 
+  // Feature flag to control live purchasing during payment gateway review
+  const PRO_PURCHASES_ENABLED = false;
+
   return (
     <div className="store-page-container">
       {/* Store Header & Pro Hero */}
@@ -250,10 +253,15 @@ export default function Store() {
           <div className="store-hero-badge-row">
             <ProBadge size="lg" />
             <span className="store-hero-tag">PREMIUM STORE & MEMBERSHIP</span>
+            {!PRO_PURCHASES_ENABLED && (
+              <span className="pro-coming-soon-chip">
+                <SparklesIcon size={12} /> Launching Soon
+              </span>
+            )}
           </div>
           <h1 className="store-hero-title">Elevate Your Presence on ANOY</h1>
           <p className="store-hero-subtitle">
-            Unlock animated avatar frames, custom profile themes, community boosting, and exclusive emoji packs with ANOY Pro.
+            Unlock animated avatar frames, custom profile themes, community boosting, and exclusive emoji packs with ANOY Pro. Direct online purchases are launching soon!
           </p>
 
           {isProUser ? (
@@ -272,7 +280,11 @@ export default function Store() {
             <div className="store-status-card free-tier">
               <div>
                 <div className="store-status-title">Free Membership</div>
-                <div className="store-status-desc">Upgrade to ANOY Pro to unlock exclusive styling, 25MB uploads, and boost communities.</div>
+                <div className="store-status-desc">
+                  {PRO_PURCHASES_ENABLED
+                    ? "Upgrade to ANOY Pro to unlock exclusive styling, 25MB uploads, and boost communities."
+                    : "ANOY Pro memberships are launching soon with exclusive styling, 25MB uploads, and community boosts."}
+                </div>
               </div>
               <button
                 type="button"
@@ -280,7 +292,7 @@ export default function Store() {
                 onClick={() => setActiveTab("plans")}
               >
                 <SparklesIcon size={16} />
-                <span>Upgrade to Pro</span>
+                <span>{PRO_PURCHASES_ENABLED ? "Upgrade to Pro" : "Explore Pro Perks"}</span>
               </button>
             </div>
           )}
@@ -351,64 +363,92 @@ export default function Store() {
         <div className="store-content-grid">
           {/* TAB 1: PRO PLANS (RAZORPAY INTEGRATED) */}
           {activeTab === "plans" && (
-            <div className="plans-grid">
-              {catalog.plans.map((plan) => {
-                const isProcessingThis = processingPlan === plan.planCode || (verifyingPayment && processingPlan === plan.planCode);
-                const displayPrice = plan.priceINR ? `₹${plan.priceINR}` : `₹99`;
-                const pricePeriod =
-                  plan.planCode === "PRO_MONTHLY"
-                    ? "/ month"
-                    : plan.planCode === "PRO_ANNUAL"
-                    ? "/ year"
-                    : "one-time";
-
-                return (
-                  <div key={plan.id} className={`plan-card ${plan.badge === "Popular" ? "featured" : ""}`}>
-                    {plan.badge && <div className="plan-badge-tag">{plan.badge}</div>}
-                    <h3 className="plan-name">{plan.name}</h3>
-                    <p className="plan-desc">{plan.description}</p>
-                    <div className="plan-price">
-                      <span className="price-amount">{displayPrice}</span>
-                      <span className="price-period">{pricePeriod}</span>
+            <div>
+              {!PRO_PURCHASES_ENABLED && (
+                <div className="pro-coming-soon-banner">
+                  <div className="pro-coming-soon-banner-icon">🚀</div>
+                  <div>
+                    <div className="pro-coming-soon-banner-title">ANOY Pro Memberships are Coming Soon!</div>
+                    <div className="pro-coming-soon-banner-desc">
+                      Direct online checkout via Razorpay is currently undergoing partner review. Direct purchases will be unlocked as soon as verification completes. Explore the preview catalog and plan perks below!
                     </div>
-
-                    <ul className="plan-features">
-                      {plan.features.map((f, i) => (
-                        <li key={i}>
-                          <CheckIcon size={14} className="feature-check" />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    {plan.isCurrentPlan ? (
-                      <button type="button" className="plan-btn current" disabled>
-                        <CheckIcon size={16} />
-                        <span>Current Active Plan</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="plan-btn unlock"
-                        onClick={() => handleRazorpaySubscribe(plan)}
-                        disabled={isProcessingThis || verifyingPayment}
-                      >
-                        {isProcessingThis ? (
-                          <>
-                            <LoaderIcon size={16} />
-                            <span>{verifyingPayment ? "Verifying..." : "Opening Checkout..."}</span>
-                          </>
-                        ) : (
-                          <>
-                            <SparklesIcon size={16} />
-                            <span>Subscribe with Razorpay</span>
-                          </>
-                        )}
-                      </button>
-                    )}
                   </div>
-                );
-              })}
+                </div>
+              )}
+
+              <div className="plans-grid">
+                {catalog.plans.map((plan) => {
+                  const isProcessingThis = processingPlan === plan.planCode || (verifyingPayment && processingPlan === plan.planCode);
+                  const displayPrice = plan.priceINR ? `₹${plan.priceINR}` : `₹99`;
+                  const pricePeriod =
+                    plan.planCode === "PRO_MONTHLY"
+                      ? "/ month"
+                      : plan.planCode === "PRO_ANNUAL"
+                      ? "/ year"
+                      : "one-time";
+
+                  return (
+                    <div key={plan.id} className={`plan-card ${plan.badge === "Popular" ? "featured" : ""}`}>
+                      {plan.badge && <div className="plan-badge-tag">{plan.badge}</div>}
+                      <h3 className="plan-name">{plan.name}</h3>
+                      <p className="plan-desc">{plan.description}</p>
+                      <div className="plan-price">
+                        <span className="price-amount">{displayPrice}</span>
+                        <span className="price-period">{pricePeriod}</span>
+                      </div>
+
+                      <ul className="plan-features">
+                        {plan.features.map((f, i) => (
+                          <li key={i}>
+                            <CheckIcon size={14} className="feature-check" />
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {plan.isCurrentPlan ? (
+                        <button type="button" className="plan-btn current" disabled>
+                          <CheckIcon size={16} />
+                          <span>Current Active Plan</span>
+                        </button>
+                      ) : PRO_PURCHASES_ENABLED ? (
+                        <button
+                          type="button"
+                          className="plan-btn unlock"
+                          onClick={() => handleRazorpaySubscribe(plan)}
+                          disabled={isProcessingThis || verifyingPayment}
+                        >
+                          {isProcessingThis ? (
+                            <>
+                              <LoaderIcon size={16} />
+                              <span>{verifyingPayment ? "Verifying..." : "Opening Checkout..."}</span>
+                            </>
+                          ) : (
+                            <>
+                              <SparklesIcon size={16} />
+                              <span>Subscribe with Razorpay</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="plan-btn coming-soon"
+                          onClick={() =>
+                            addToast(
+                              "ANOY Pro purchasing will be live soon once payment gateway review finishes!",
+                              "info"
+                            )
+                          }
+                        >
+                          <SparklesIcon size={16} />
+                          <span>Coming Soon</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -460,9 +500,14 @@ export default function Store() {
                         <button
                           type="button"
                           className="item-btn locked"
-                          onClick={() => setActiveTab("plans")}
+                          onClick={() => {
+                            setActiveTab("plans");
+                            if (!PRO_PURCHASES_ENABLED) {
+                              addToast("This frame requires ANOY Pro. Pro memberships are coming soon!", "info");
+                            }
+                          }}
                         >
-                          <LockIcon size={14} /> Requires Pro
+                          <LockIcon size={14} /> {PRO_PURCHASES_ENABLED ? "Requires Pro" : "Pro Exclusive (Coming Soon)"}
                         </button>
                       ) : (
                         <button
@@ -525,9 +570,14 @@ export default function Store() {
                         <button
                           type="button"
                           className="item-btn locked"
-                          onClick={() => setActiveTab("plans")}
+                          onClick={() => {
+                            setActiveTab("plans");
+                            if (!PRO_PURCHASES_ENABLED) {
+                              addToast("This theme requires ANOY Pro. Pro memberships are coming soon!", "info");
+                            }
+                          }}
                         >
-                          <LockIcon size={14} /> Requires Pro
+                          <LockIcon size={14} /> {PRO_PURCHASES_ENABLED ? "Requires Pro" : "Pro Exclusive (Coming Soon)"}
                         </button>
                       ) : (
                         <button
@@ -586,9 +636,14 @@ export default function Store() {
                         <button
                           type="button"
                           className="item-btn locked"
-                          onClick={() => setActiveTab("plans")}
+                          onClick={() => {
+                            setActiveTab("plans");
+                            if (!PRO_PURCHASES_ENABLED) {
+                              addToast("This decoration requires ANOY Pro. Pro memberships are coming soon!", "info");
+                            }
+                          }}
                         >
-                          <LockIcon size={14} /> Requires Pro
+                          <LockIcon size={14} /> {PRO_PURCHASES_ENABLED ? "Requires Pro" : "Pro Exclusive (Coming Soon)"}
                         </button>
                       ) : (
                         <button
@@ -635,9 +690,14 @@ export default function Store() {
                       <button
                         type="button"
                         className="item-btn locked"
-                        onClick={() => setActiveTab("plans")}
+                        onClick={() => {
+                          setActiveTab("plans");
+                          if (!PRO_PURCHASES_ENABLED) {
+                            addToast("This emoji pack requires ANOY Pro. Pro memberships are coming soon!", "info");
+                          }
+                        }}
                       >
-                        <LockIcon size={14} /> Requires Pro
+                        <LockIcon size={14} /> {PRO_PURCHASES_ENABLED ? "Requires Pro" : "Pro Exclusive (Coming Soon)"}
                       </button>
                     ) : (
                       <button

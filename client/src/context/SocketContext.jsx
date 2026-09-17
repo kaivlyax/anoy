@@ -5,7 +5,9 @@ import { conversationApi } from "../services/api";
 
 const SocketContext = createContext(null);
 
-const SOCKET_SERVER_URL = "http://localhost:5001";
+const SOCKET_SERVER_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  (import.meta.env.PROD ? "/" : "http://localhost:5001");
 
 export const SocketProvider = ({ children }) => {
   const { token, isAuthenticated } = useAuth();

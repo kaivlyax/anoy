@@ -15,7 +15,8 @@ import {
   AlertCircleIcon,
   UsersIcon,
   MessageCircleIcon,
-  SparklesIcon
+  SparklesIcon,
+  SettingsIcon
 } from "../components/Icons";
 
 function Profile() {
@@ -351,6 +352,22 @@ function Profile() {
                       >
                         Edit Profile
                       </button>
+                      <Link
+                        to="/settings"
+                        className="composer-submit-btn"
+                        style={{
+                          background: "var(--bg-card)",
+                          border: "1px solid var(--border-light)",
+                          color: "var(--text-main)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6
+                        }}
+                        title="Account & Privacy Settings"
+                      >
+                        <SettingsIcon size={16} />
+                        <span>Settings</span>
+                      </Link>
                     </div>
                   ) : (
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

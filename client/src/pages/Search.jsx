@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
-import { userApi, followApi, searchApi, communityApi } from "../services/api";
+import { userApi, followApi, searchApi, communityApi, postApi } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import AvatarFrame from "../components/AvatarFrame";
@@ -21,15 +21,6 @@ import {
 } from "../components/Icons";
 
 const RECENT_SEARCHES_KEY = "anoy_recent_searches";
-const TRENDING_TAGS = [
-  "ComputerScience",
-  "Hackathon",
-  "WebDev",
-  "MachineLearning",
-  "Projects",
-  "Algorithms",
-  "Design"
-];
 
 function Search() {
   const { user } = useAuth();
@@ -43,6 +34,7 @@ function Search() {
   const [searchTerm, setSearchTerm] = useState(queryParam);
   const [debouncedQuery, setDebouncedQuery] = useState(queryParam);
   const [activeTab, setActiveTab] = useState(tabParam);
+  const [trendingTags, setTrendingTags] = useState([]);
 
   // Suggestions & Dropdown State
   const [isFocused, setIsFocused] = useState(false);
@@ -189,9 +181,10 @@ function Search() {
     const fetchInitialDiscover = async () => {
       try {
         setLoadingInitial(true);
-        const [usersRes, commsRes] = await Promise.allSettled([
+        const [usersRes, commsRes, trendRes] = await Promise.allSettled([
           userApi.discoverUsers(12),
-          communityApi.getCommunities({ limit: 6 })
+          communityApi.getCommunities({ limit: 6 }),
+          postApi.getTrendingTopics(8)
         ]);
 
         if (isMounted) {
@@ -202,6 +195,10 @@ function Search() {
           }
           if (commsRes.status === "fulfilled" && commsRes.value.data?.success) {
             setPopularCommunities(commsRes.value.data.communities || []);
+          }
+          if (trendRes.status === "fulfilled" && trendRes.value.data?.success) {
+            const tList = (trendRes.value.data.trending || []).map((t) => t.tag || t.topic);
+            setTrendingTags(tList);
           }
         }
       } catch (err) {
@@ -467,24 +464,26 @@ function Search() {
                     </div>
                   )}
 
-                  <div className="search-suggestion-section">
-                    <span className="suggestion-label">
-                      <SparklesIcon size={14} /> Trending on ANOY
-                    </span>
-                    <div className="trending-tags-grid">
-                      {TRENDING_TAGS.map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          className="trending-tag-btn"
-                          onClick={() => handleSelectSearch(tag)}
-                        >
-                          <HashIcon size={13} />
-                          <span>{tag}</span>
-                        </button>
-                      ))}
+                  {trendingTags.length > 0 && (
+                    <div className="search-suggestion-section">
+                      <span className="suggestion-label">
+                        <SparklesIcon size={14} /> Trending on ANOY
+                      </span>
+                      <div className="trending-tags-grid">
+                        {trendingTags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            className="trending-tag-btn"
+                            onClick={() => handleSelectSearch(tag, "posts")}
+                          >
+                            <HashIcon size={13} />
+                            <span>{tag.replace(/^#/, "")}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : liveLoading && !hasLiveResults ? (
                 /* CASE 2: Loading live results */
@@ -694,19 +693,21 @@ function Search() {
               <h2>Explore Campus Highlights</h2>
             </div>
 
-            {/* Quick Explore Tags */}
-            <div className="discovery-tags-bar">
-              {TRENDING_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  className="discovery-topic-pill"
-                  onClick={() => handleSelectSearch(tag)}
-                >
-                  #{tag}
-                </button>
-              ))}
-            </div>
+            {/* Quick Explore Tags from Real Trends */}
+            {trendingTags.length > 0 && (
+              <div className="discovery-tags-bar">
+                {trendingTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="discovery-topic-pill"
+                    onClick={() => handleSelectSearch(tag, "posts")}
+                  >
+                    #{tag.replace(/^#/, "")}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* People you may know */}
             <div className="discovery-block">

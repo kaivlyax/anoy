@@ -2,40 +2,49 @@
   --primary: #4f46e5;
   --primary-hover: #4338ca;
   --primary-light: #eef2ff;
-  --primary-glow: rgba(79, 70, 229, 0.15);
+  --primary-glow: rgba(79, 70, 229, 0.2);
 
   --secondary: #0ea5e9;
   --accent-heart: #f43f5e;
   --accent-heart-light: #ffe4e6;
 
-  --bg-app: #0f172a;
-  --bg-card: #1e293b;
-  --bg-card-hover: #24344d;
-  --bg-surface: #334155;
-  --bg-input: #1e293b;
-  --bg-glass: rgba(30, 41, 59, 0.85);
+  /* Tricolor & Cultural Identity */
+  --saffron: #FF9933;
+  --saffron-deep: #E65100;
+  --saffron-glow: rgba(255, 153, 51, 0.25);
+  --bharat-green: #138808;
+  --bharat-green-glow: rgba(19, 136, 8, 0.25);
+  --chakra-navy: #000080;
+
+  --bg-app: #090d16;
+  --bg-card: rgba(22, 28, 48, 0.75);
+  --bg-card-hover: rgba(30, 40, 68, 0.85);
+  --bg-surface: rgba(36, 46, 75, 0.8);
+  --bg-input: rgba(15, 20, 35, 0.6);
+  --bg-glass: rgba(18, 24, 44, 0.78);
 
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
   --text-dim: #64748b;
 
-  --border-color: #334155;
-  --border-light: #475569;
+  --border-color: rgba(255, 255, 255, 0.09);
+  --border-light: rgba(255, 255, 255, 0.15);
+  --border-saffron: rgba(255, 153, 51, 0.25);
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
   --radius-full: 9999px;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
-  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 14px 32px rgba(0, 0, 0, 0.45);
 
   --sidebar-width: 260px;
-  --right-sidebar-width: 320px;
+  --right-sidebar-width: 330px;
   --content-max-width: 640px;
 
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
     Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -106,7 +115,8 @@ input, textarea, select {
   gap: 12px;
   padding: 12px 18px;
   border-radius: var(--radius-md);
-  background: var(--bg-card);
+  background: rgba(20, 26, 44, 0.92);
+  backdrop-filter: blur(16px);
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-lg);
   color: var(--text-main);
@@ -116,17 +126,17 @@ input, textarea, select {
 
 .toast-item.toast-success {
   border-color: #10b981;
-  background: #064e3b;
+  background: rgba(6, 78, 59, 0.9);
 }
 
 .toast-item.toast-error {
   border-color: #ef4444;
-  background: #7f1d1d;
+  background: rgba(127, 29, 29, 0.9);
 }
 
 .toast-item.toast-info {
   border-color: var(--primary);
-  background: #312e81;
+  background: rgba(49, 46, 129, 0.9);
 }
 
 .toast-close-btn {

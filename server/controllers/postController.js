@@ -718,13 +718,171 @@ const getPersonalizedFeed = async (req, res) => {
 };
 
 
-module.exports = {
+// =====================================================
+// GET TRENDING TOPICS
+// =====================================================
+const getTrendingTopics = async (req, res) => {
+    try {
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 30);
+        const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 90);
 
+        const timeBoundary = new Date();
+        timeBoundary.setDate(timeBoundary.getDate() - days);
+
+        // STRICT PRIVACY: Only public, non-deleted posts with non-empty content
+        const publicPosts = await Post.find({
+            isDeleted: false,
+            visibility: "PUBLIC",
+            content: { $exists: true, $ne: "" },
+            createdAt: { $gte: timeBoundary }
+        })
+            .select("_id content createdAt")
+            .sort({ createdAt: -1 })
+            .limit(500);
+
+        if (!publicPosts || publicPosts.length === 0) {
+            return res.status(200).json({
+                success: true,
+                count: 0,
+                trending: []
+            });
+        }
+
+        // Hashtag extraction regex supporting letters, digits, underscores, and unicode
+        const hashtagRegex = /(?:^|\s)(#[a-zA-Z0-9_\u0900-\u097F]+)/g;
+
+        // Grouping map for extracted topics
+        const topicMap = new Map();
+
+        publicPosts.forEach((post) => {
+            const matches = post.content.match(hashtagRegex);
+            if (!matches) return;
+
+            const uniqueTagsInPost = new Set();
+            matches.forEach((m) => {
+                const cleaned = m.trim().replace(/[.,!?:;]+$/, "");
+                if (cleaned.length > 1) {
+                    uniqueTagsInPost.add(cleaned);
+                }
+            });
+
+            uniqueTagsInPost.forEach((rawTag) => {
+                const normalized = rawTag.toLowerCase();
+                if (!topicMap.has(normalized)) {
+                    topicMap.set(normalized, {
+                        tag: rawTag,
+                        topic: rawTag,
+                        postIds: new Set([post._id.toString()]),
+                        latestDate: post.createdAt,
+                        posts: [{ id: post._id, createdAt: post.createdAt }]
+                    });
+                } else {
+                    const entry = topicMap.get(normalized);
+                    entry.postIds.add(post._id.toString());
+                    entry.posts.push({ id: post._id, createdAt: post.createdAt });
+                    if (post.createdAt > entry.latestDate) {
+                        entry.latestDate = post.createdAt;
+                        entry.tag = rawTag;
+                        entry.topic = rawTag;
+                    }
+                }
+            });
+        });
+
+        if (topicMap.size === 0) {
+            return res.status(200).json({
+                success: true,
+                count: 0,
+                trending: []
+            });
+        }
+
+        // Gather all relevant postIds across all extracted topics to query likes & comments
+        const allPostIds = [];
+        topicMap.forEach((entry) => {
+            entry.postIds.forEach((pid) => allPostIds.push(pid));
+        });
+        const uniquePostIds = Array.from(new Set(allPostIds));
+
+        // Aggregate likes and comments on these public posts
+        const [likes, comments] = await Promise.all([
+            Like.find({ post: { $in: uniquePostIds } }).select("post"),
+            Comment.find({ post: { $in: uniquePostIds }, isDeleted: false }).select("post")
+        ]);
+
+        const likeCounts = new Map();
+        likes.forEach((l) => {
+            const pid = l.post.toString();
+            likeCounts.set(pid, (likeCounts.get(pid) || 0) + 1);
+        });
+
+        const commentCounts = new Map();
+        comments.forEach((c) => {
+            const pid = c.post.toString();
+            commentCounts.set(pid, (commentCounts.get(pid) || 0) + 1);
+        });
+
+        const now = Date.now();
+
+        // Calculate score for each topic
+        const scoredTopics = Array.from(topicMap.values()).map((entry) => {
+            const postCount = entry.postIds.size;
+            let totalLikes = 0;
+            let totalComments = 0;
+            let totalRecencyWeight = 0;
+
+            entry.posts.forEach((p) => {
+                const pid = p.id.toString();
+                totalLikes += likeCounts.get(pid) || 0;
+                totalComments += commentCounts.get(pid) || 0;
+
+                const ageHours = Math.max((now - new Date(p.createdAt).getTime()) / (1000 * 60 * 60), 0);
+                totalRecencyWeight += 1 / (1 + ageHours / 24);
+            });
+
+            const engagement = totalLikes + totalComments;
+            const score = Math.round((postCount * 3 + totalLikes * 1.5 + totalComments * 2.5 + totalRecencyWeight * 2) * 10) / 10;
+
+            return {
+                tag: entry.tag,
+                topic: entry.topic,
+                postCount,
+                likeCount: totalLikes,
+                commentCount: totalComments,
+                engagement,
+                score
+            };
+        });
+
+        // Sort descending by score, then by postCount, then engagement
+        scoredTopics.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            if (b.postCount !== a.postCount) return b.postCount - a.postCount;
+            return b.engagement - a.engagement;
+        });
+
+        const topTrending = scoredTopics.slice(0, limit);
+
+        return res.status(200).json({
+            success: true,
+            count: topTrending.length,
+            trending: topTrending
+        });
+    } catch (error) {
+        console.error("Get trending topics error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error calculating trending topics"
+        });
+    }
+};
+
+module.exports = {
     createPost,
     getPosts,
     getPostById,
     updatePost,
     deletePost,
-    getPersonalizedFeed
-
+    getPersonalizedFeed,
+    getTrendingTopics
 };

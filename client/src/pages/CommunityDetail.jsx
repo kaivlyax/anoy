@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { communityApi, communityChatApi, meetingRoomApi, mediaApi, postApi } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
@@ -11,6 +11,7 @@ import PostComposer from "../components/PostComposer";
 import ImageLightboxModal from "../components/ImageLightboxModal";
 import {
   UsersIcon,
+  UserIcon,
   SparklesIcon,
   ShieldIcon,
   TrashIcon,
@@ -25,7 +26,19 @@ import {
   CameraIcon,
   SearchIcon,
   GraduationCapIcon,
-  VideoIcon
+  VideoIcon,
+  MoreVerticalIcon,
+  AlertTriangleIcon,
+  CheckIcon,
+  CheckCircleIcon,
+  UserPlusIcon,
+  UserMinusIcon,
+  ClockIcon,
+  FileTextIcon,
+  BanIcon,
+  SlidersIcon,
+  SettingsIcon,
+  GlobeIcon
 } from "../components/Icons";
 
 const COMMUNITY_CHANNELS = [
@@ -44,14 +57,52 @@ export default function CommunityDetail() {
   const [community, setCommunity] = useState(null);
   const [boosters, setBoosters] = useState([]);
   const [posts, setPosts] = useState([]);
-  const [activeTab, setActiveTab] = useState("chat"); // 'chat' | 'feed' | 'members' | 'moderation' | 'decorations'
+  const [activeTab, setActiveTab] = useState("chat"); // 'chat' | 'feed' | 'members' | 'moderation' | 'rooms'
   const [loading, setLoading] = useState(true);
   const [boosting, setBoosting] = useState(false);
   const [showBoostModal, setShowBoostModal] = useState(false);
 
-  // Settings & Moderation state
+  // Members Tab State
+  const [members, setMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState("ALL");
+  const [memberCounts, setMemberCounts] = useState({ all: 0, owners: 0, moderators: 0, members: 0 });
+  const [activeDropdownUser, setActiveDropdownUser] = useState(null);
+
+  // Moderation Dashboard State
+  const [modSubtab, setModSubtab] = useState("overview"); // 'overview' | 'members' | 'reports' | 'banned' | 'history' | 'settings'
+  const [bannedUsers, setBannedUsers] = useState([]);
+  const [loadingBanned, setLoadingBanned] = useState(false);
+  const [modLogs, setModLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [reports, setReports] = useState([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [reportStatusFilter, setReportStatusFilter] = useState("ALL");
+  const [resolutionNotesMap, setResolutionNotesMap] = useState({});
+  const [resolvingReportId, setResolvingReportId] = useState(null);
   const [modTargetUsername, setModTargetUsername] = useState("");
   const [addingMod, setAddingMod] = useState(false);
+
+  // Community Settings State
+  const [settingsForm, setSettingsForm] = useState({
+    name: "",
+    description: "",
+    isPrivate: false,
+    allowMemberPosts: true
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Ban Modal State
+  const [banModalUser, setBanModalUser] = useState(null);
+  const [banReason, setBanReason] = useState("");
+  const [banningUser, setBanningUser] = useState(false);
+
+  // Report Modal State
+  const [reportModalUser, setReportModalUser] = useState(null);
+  const [reportReason, setReportReason] = useState("Violation of community rules");
+  const [reportDetails, setReportDetails] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
 
   // Community Chat State
   const [activeChannel, setActiveChannel] = useState("general");
@@ -75,7 +126,7 @@ export default function CommunityDetail() {
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDesc, setNewRoomDesc] = useState("");
-  const [newRoomMax, setNewRoomMax] = useState(10);
+  const [newRoomMax, setNewRoomMax] = useState(5);
   const [newRoomPrivate, setNewRoomPrivate] = useState(false);
   const [newRoomPasscode, setNewRoomPasscode] = useState("");
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -373,7 +424,7 @@ export default function CommunityDetail() {
   const handleBoost = async () => {
     if (!community) return;
     if (!isProUser) {
-      addToast("You must be an ANOY Pro member to boost communities!", "warning");
+      addToast("You must be an ANOY Pro member to boost communities! Pro memberships are launching soon.", "warning");
       navigate("/store");
       return;
     }
@@ -393,26 +444,119 @@ export default function CommunityDetail() {
     }
   };
 
+  // Fetch members with query and role filter
+  const fetchMembers = useCallback(async () => {
+    if (!community?._id) return;
+    try {
+      setLoadingMembers(true);
+      const res = await communityApi.getMembers(community._id, {
+        q: memberSearchQuery,
+        role: selectedRoleFilter !== "ALL" ? selectedRoleFilter : undefined
+      });
+      if (res.data.success) {
+        setMembers(res.data.members || []);
+        if (res.data.counts) setMemberCounts(res.data.counts);
+      }
+    } catch (err) {
+      console.warn("Fetch members error:", err);
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [community?._id, memberSearchQuery, selectedRoleFilter]);
+
+  // Fetch banned users
+  const fetchBannedUsers = useCallback(async () => {
+    if (!community?._id) return;
+    try {
+      setLoadingBanned(true);
+      const res = await communityApi.getBannedMembers(community._id);
+      if (res.data.success) {
+        setBannedUsers(res.data.bannedUsers || []);
+      }
+    } catch (err) {
+      console.warn("Fetch banned users error:", err);
+    } finally {
+      setLoadingBanned(false);
+    }
+  }, [community?._id]);
+
+  // Fetch moderation logs
+  const fetchModLogs = useCallback(async () => {
+    if (!community?._id) return;
+    try {
+      setLoadingLogs(true);
+      const res = await communityApi.getModerationLogs(community._id);
+      if (res.data.success) {
+        setModLogs(res.data.logs || []);
+      }
+    } catch (err) {
+      console.warn("Fetch mod logs error:", err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, [community?._id]);
+
+  // Fetch reports
+  const fetchReports = useCallback(async () => {
+    if (!community?._id) return;
+    try {
+      setLoadingReports(true);
+      const res = await communityApi.getReports(community._id, {
+        status: reportStatusFilter !== "ALL" ? reportStatusFilter : undefined
+      });
+      if (res.data.success) {
+        setReports(res.data.reports || []);
+      }
+    } catch (err) {
+      console.warn("Fetch reports error:", err);
+    } finally {
+      setLoadingReports(false);
+    }
+  }, [community?._id, reportStatusFilter]);
+
+  // Fetch data on tab / subtab changes
+  useEffect(() => {
+    if (activeTab === "members" || (activeTab === "moderation" && modSubtab === "members")) {
+      fetchMembers();
+    }
+  }, [activeTab, modSubtab, fetchMembers]);
+
+  useEffect(() => {
+    if (activeTab === "moderation") {
+      if (modSubtab === "overview") {
+        fetchBannedUsers();
+        fetchReports();
+        fetchModLogs();
+      } else if (modSubtab === "banned") {
+        fetchBannedUsers();
+      } else if (modSubtab === "history") {
+        fetchModLogs();
+      } else if (modSubtab === "reports") {
+        fetchReports();
+      } else if (modSubtab === "settings" && community) {
+        setSettingsForm({
+          name: community.name || "",
+          description: community.description || "",
+          isPrivate: Boolean(community.isPrivate),
+          allowMemberPosts: community.settings?.allowMemberPosts !== false
+        });
+      }
+    }
+  }, [activeTab, modSubtab, community, fetchBannedUsers, fetchReports, fetchModLogs]);
+
   const handleAddModerator = async (e) => {
     e.preventDefault();
     if (!modTargetUsername.trim()) return;
 
     try {
       setAddingMod(true);
-      const target = community.members.find(
-        (m) => m.username?.toLowerCase() === modTargetUsername.trim().toLowerCase()
-      );
-
-      if (!target) {
-        addToast("User must be a member of this community first", "error");
-        return;
-      }
-
-      const res = await communityApi.addModerator(community._id, target._id);
+      const res = await communityApi.addModerator(community._id, undefined, modTargetUsername.trim());
       if (res.data.success) {
         addToast(res.data.message || "Moderator added!", "success");
         setModTargetUsername("");
         fetchCommunityData();
+        fetchMembers();
+        fetchModLogs();
       }
     } catch (err) {
       addToast(err.response?.data?.message || "Failed to add moderator", "error");
@@ -421,15 +565,155 @@ export default function CommunityDetail() {
     }
   };
 
-  const handleRemoveModerator = async (targetUserId) => {
+  const handlePromoteModerator = async (targetUserId, targetUsername) => {
+    try {
+      const res = await communityApi.addModerator(community._id, targetUserId);
+      if (res.data.success) {
+        addToast(`@${targetUsername} is now a Moderator!`, "success");
+        fetchCommunityData();
+        fetchMembers();
+        fetchModLogs();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || "Failed to promote moderator", "error");
+    } finally {
+      setActiveDropdownUser(null);
+    }
+  };
+
+  const handleRemoveModerator = async (targetUserId, targetUsername) => {
     try {
       const res = await communityApi.removeModerator(community._id, targetUserId);
       if (res.data.success) {
-        addToast("Moderator removed", "info");
+        addToast(`@${targetUsername || "user"} demoted to Member`, "info");
         fetchCommunityData();
+        fetchMembers();
+        fetchModLogs();
       }
     } catch (err) {
-      addToast(err.response?.data?.message || "Failed to remove moderator", "error");
+      addToast(err.response?.data?.message || "Failed to demote moderator", "error");
+    } finally {
+      setActiveDropdownUser(null);
+    }
+  };
+
+  const handleRemoveMember = async (targetUserId, targetUsername) => {
+    if (!window.confirm(`Are you sure you want to remove @${targetUsername} from the community?`)) return;
+    try {
+      const res = await communityApi.removeMember(community._id, targetUserId);
+      if (res.data.success) {
+        addToast(`Removed @${targetUsername} from community`, "info");
+        fetchCommunityData();
+        fetchMembers();
+        fetchModLogs();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || "Failed to remove member", "error");
+    } finally {
+      setActiveDropdownUser(null);
+    }
+  };
+
+  const handleConfirmBan = async (e) => {
+    e.preventDefault();
+    if (!banModalUser || banningUser) return;
+    try {
+      setBanningUser(true);
+      const res = await communityApi.banMember(community._id, banModalUser._id, banReason);
+      if (res.data.success) {
+        addToast(`Banned @${banModalUser.username} from community`, "success");
+        setBanModalUser(null);
+        setBanReason("");
+        fetchCommunityData();
+        fetchMembers();
+        fetchBannedUsers();
+        fetchModLogs();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || "Failed to ban member", "error");
+    } finally {
+      setBanningUser(false);
+    }
+  };
+
+  const handleUnbanMember = async (targetUserId, targetUsername) => {
+    try {
+      const res = await communityApi.unbanMember(community._id, targetUserId);
+      if (res.data.success) {
+        addToast(`Unbanned @${targetUsername || "user"}`, "success");
+        fetchBannedUsers();
+        fetchModLogs();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || "Failed to unban user", "error");
+    }
+  };
+
+  const handleSubmitReport = async (e) => {
+    e.preventDefault();
+    if (!reportModalUser || submittingReport) return;
+    try {
+      setSubmittingReport(true);
+      const res = await communityApi.createReport(community._id, {
+        targetUserId: reportModalUser._id,
+        reason: reportReason,
+        details: reportDetails
+      });
+      if (res.data.success) {
+        addToast("Report submitted to community moderators", "success");
+        setReportModalUser(null);
+        setReportReason("Violation of community rules");
+        setReportDetails("");
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || "Failed to submit report", "error");
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
+  const handleResolveReport = async (reportId, status) => {
+    try {
+      setResolvingReportId(reportId);
+      const notes = resolutionNotesMap[reportId] || "";
+      const res = await communityApi.resolveReport(community._id, reportId, {
+        status,
+        resolutionNotes: notes
+      });
+      if (res.data.success) {
+        addToast(res.data.message || `Report ${status.toLowerCase()}`, "success");
+        fetchReports();
+        fetchModLogs();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || "Failed to resolve report", "error");
+    } finally {
+      setResolvingReportId(null);
+    }
+  };
+
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    if (!community?._id || savingSettings) return;
+    try {
+      setSavingSettings(true);
+      const res = await communityApi.updateCommunity(community._id, {
+        name: settingsForm.name,
+        description: settingsForm.description,
+        isPrivate: settingsForm.isPrivate,
+        settings: {
+          allowMemberPosts: settingsForm.allowMemberPosts
+        }
+      });
+      if (res.data.success) {
+        addToast("Community settings saved!", "success");
+        fetchCommunityData();
+        fetchModLogs();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || "Failed to save settings", "error");
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -459,12 +743,15 @@ export default function CommunityDetail() {
     e.preventDefault();
     if (!newRoomName.trim() || !community?._id || creatingRoom) return;
 
+    const maxAllowed = isProUser ? 15 : 5;
+    const requestedMax = Math.min(Math.max(Number(newRoomMax) || maxAllowed, 2), maxAllowed);
+
     try {
       setCreatingRoom(true);
       const payload = {
         name: newRoomName.trim(),
         description: newRoomDesc.trim(),
-        maxParticipants: Number(newRoomMax) || 10,
+        maxParticipants: requestedMax,
         isPrivate: Boolean(newRoomPrivate),
         passcode: newRoomPrivate ? newRoomPasscode.trim() : ""
       };
@@ -475,7 +762,7 @@ export default function CommunityDetail() {
         setShowCreateRoomModal(false);
         setNewRoomName("");
         setNewRoomDesc("");
-        setNewRoomMax(10);
+        setNewRoomMax(isProUser ? 15 : 5);
         setNewRoomPrivate(false);
         setNewRoomPasscode("");
         fetchMeetingRooms();
@@ -492,6 +779,17 @@ export default function CommunityDetail() {
   };
 
   const handleJoinMeetingRoomClick = (room) => {
+    const activeCount = room.activeParticipants?.length || 0;
+    const maxCapacity = room.maxParticipants || (room.isHostPro ? 15 : 5);
+
+    if (activeCount >= maxCapacity) {
+      addToast(
+        `This meeting room is full (${maxCapacity} max participants for ${room.isHostPro ? "ANOY Pro" : "Free"} host)`,
+        "error"
+      );
+      return;
+    }
+
     if (room.isPrivate && room.hasPasscode) {
       setPromptRoom(room);
       setEnteredPasscode("");
@@ -924,66 +1222,204 @@ export default function CommunityDetail() {
         {/* TAB 2: MEMBERS */}
         {activeTab === "members" && (
           <div className="comm-members-layout">
-            {boosters.length > 0 && (
-              <div className="boosters-box">
-                <h4>🚀 Community Boosters</h4>
-                <div className="boosters-row">
-                  {boosters.map((b) => (
-                    <div key={b._id} className="booster-chip">
-                      <AvatarFrame
-                        src={b.booster?.avatar}
-                        fallbackText={b.booster?.displayName || "A"}
-                        size={28}
-                        frame={b.booster?.avatarDecoration}
-                      />
-                      <span>@{b.booster?.username}</span>
-                      {b.booster?.isPro && <ProBadge size="sm" />}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="member-role-section">
-              <h4 className="role-heading">👑 Owner</h4>
-              <div className="member-card">
-                <AvatarFrame
-                  src={community.owner?.avatar}
-                  fallbackText={community.owner?.displayName || "A"}
-                  size={40}
-                  frame={community.owner?.avatarDecoration}
+            <div className="comm-members-toolbar">
+              <div className="comm-members-search-box">
+                <SearchIcon size={16} />
+                <input
+                  type="text"
+                  placeholder="Search community members..."
+                  value={memberSearchQuery}
+                  onChange={(e) => setMemberSearchQuery(e.target.value)}
                 />
-                <div className="member-info">
-                  <div className="member-name-row">
-                    <strong>{community.owner?.displayName}</strong>
-                    {community.owner?.isPro && <ProBadge size="sm" />}
-                  </div>
-                  <span className="member-handle">@{community.owner?.username}</span>
-                </div>
+                {memberSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setMemberSearchQuery("")}
+                    className="clear-search-btn"
+                    style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer" }}
+                  >
+                    <XIcon size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="comm-role-filter-pills">
+                <button
+                  type="button"
+                  className={`comm-role-pill-btn ${selectedRoleFilter === "ALL" ? "active" : ""}`}
+                  onClick={() => setSelectedRoleFilter("ALL")}
+                >
+                  All ({memberCounts.all || community.memberCount || 0})
+                </button>
+                <button
+                  type="button"
+                  className={`comm-role-pill-btn ${selectedRoleFilter === "OWNER" ? "active" : ""}`}
+                  onClick={() => setSelectedRoleFilter("OWNER")}
+                >
+                  👑 Owners ({memberCounts.owners || 1})
+                </button>
+                <button
+                  type="button"
+                  className={`comm-role-pill-btn ${selectedRoleFilter === "MODERATOR" ? "active" : ""}`}
+                  onClick={() => setSelectedRoleFilter("MODERATOR")}
+                >
+                  🛡️ Moderators ({memberCounts.moderators || community.moderators?.length || 0})
+                </button>
+                <button
+                  type="button"
+                  className={`comm-role-pill-btn ${selectedRoleFilter === "MEMBER" ? "active" : ""}`}
+                  onClick={() => setSelectedRoleFilter("MEMBER")}
+                >
+                  🎓 Members ({memberCounts.members || 0})
+                </button>
               </div>
             </div>
 
-            {community.moderators?.length > 0 && (
-              <div className="member-role-section">
-                <h4 className="role-heading">🛡️ Moderators ({community.moderators.length})</h4>
-                <div className="members-grid">
-                  {community.moderators.map((mod) => (
-                    <div key={mod._id} className="member-card">
-                      <AvatarFrame
-                        src={mod.avatar}
-                        fallbackText={mod.displayName || "A"}
-                        size={40}
-                      />
-                      <div className="member-info">
-                        <div className="member-name-row">
-                          <strong>{mod.displayName}</strong>
-                          {mod.isPro && <ProBadge size="sm" />}
+            {loadingMembers ? (
+              <div className="comm-rooms-loading">
+                <LoaderIcon size={28} />
+                <span>Loading community members...</span>
+              </div>
+            ) : members.length === 0 ? (
+              <div className="comm-rooms-empty">
+                <UsersIcon size={40} />
+                <h3>No members found</h3>
+                <p>Try clearing your search query or switching role filters.</p>
+              </div>
+            ) : (
+              <div className="comm-members-grid">
+                {members.map((member) => {
+                  const isCurrentTarget = activeDropdownUser === member._id;
+                  const isSelf = member._id === user?.id || member._id === user?._id;
+                  const canManage = (isOwner && !isSelf) || (isMod && member.role === "MEMBER" && !isSelf);
+
+                  return (
+                    <div key={member._id} className="comm-member-card">
+                      <div className="comm-member-top-row">
+                        <Link to={`/profile/${member.username}`} className="comm-member-user-link">
+                          <AvatarFrame frame={member.avatarDecoration} size="md">
+                            {member.avatar ? (
+                              <img src={member.avatar} alt={member.displayName} />
+                            ) : (
+                              (member.displayName || member.username || "U").charAt(0).toUpperCase()
+                            )}
+                          </AvatarFrame>
+                          <div className="comm-member-names">
+                            <div className="comm-member-name-row">
+                              <span className="comm-member-display-name">{member.displayName || member.username}</span>
+                              {member.isPro && <ProBadge size="sm" />}
+                            </div>
+                            <span className="comm-member-handle">@{member.username}</span>
+                          </div>
+                        </Link>
+
+                        <div style={{ position: "relative" }}>
+                          <button
+                            type="button"
+                            className="comm-member-menu-btn"
+                            onClick={() => setActiveDropdownUser(isCurrentTarget ? null : member._id)}
+                            title="Member actions"
+                            aria-label="Member actions"
+                          >
+                            <MoreVerticalIcon size={16} />
+                          </button>
+
+                          {isCurrentTarget && (
+                            <div className="comm-member-dropdown">
+                              <Link
+                                to={`/profile/${member.username}`}
+                                className="comm-dropdown-action"
+                                onClick={() => setActiveDropdownUser(null)}
+                              >
+                                <UserIcon size={14} />
+                                <span>View Profile</span>
+                              </Link>
+
+                              {isOwner && member.role === "MEMBER" && (
+                                <button
+                                  type="button"
+                                  className="comm-dropdown-action"
+                                  onClick={() => handlePromoteModerator(member._id, member.username)}
+                                >
+                                  <UserPlusIcon size={14} />
+                                  <span>Promote to Mod</span>
+                                </button>
+                              )}
+
+                              {isOwner && member.role === "MODERATOR" && (
+                                <button
+                                  type="button"
+                                  className="comm-dropdown-action"
+                                  onClick={() => handleRemoveModerator(member._id, member.username)}
+                                >
+                                  <UserMinusIcon size={14} />
+                                  <span>Demote to Member</span>
+                                </button>
+                              )}
+
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  className="comm-dropdown-action danger"
+                                  onClick={() => handleRemoveMember(member._id, member.username)}
+                                >
+                                  <TrashIcon size={14} />
+                                  <span>Remove from Community</span>
+                                </button>
+                              )}
+
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  className="comm-dropdown-action danger"
+                                  onClick={() => {
+                                    setActiveDropdownUser(null);
+                                    setBanModalUser(member);
+                                    setBanReason("");
+                                  }}
+                                >
+                                  <BanIcon size={14} />
+                                  <span>Ban from Community</span>
+                                </button>
+                              )}
+
+                              {!isSelf && (
+                                <button
+                                  type="button"
+                                  className="comm-dropdown-action"
+                                  onClick={() => {
+                                    setActiveDropdownUser(null);
+                                    setReportModalUser(member);
+                                    setReportReason("Violation of community rules");
+                                    setReportDetails("");
+                                  }}
+                                >
+                                  <AlertTriangleIcon size={14} />
+                                  <span>Report User</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <span className="member-handle">@{mod.username}</span>
                       </div>
+
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <span className={`comm-member-role-tag ${member.role.toLowerCase()}`}>
+                          {member.role === "OWNER" && "👑 Owner"}
+                          {member.role === "MODERATOR" && "🛡️ Mod"}
+                          {member.role === "MEMBER" && "🎓 Member"}
+                        </span>
+                        {member.joinedAt && (
+                          <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
+                            Joined {new Date(member.joinedAt).toLocaleDateString([], { month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+
+                      {member.bio && <p className="comm-member-bio">{member.bio}</p>}
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1007,7 +1443,10 @@ export default function CommunityDetail() {
                 <button
                   type="button"
                   className="btn-create-comm-room"
-                  onClick={() => setShowCreateRoomModal(true)}
+                  onClick={() => {
+                    setNewRoomMax(isProUser ? 15 : 5);
+                    setShowCreateRoomModal(true);
+                  }}
                 >
                   <PlusIcon size={16} />
                   <span>Create Meeting Room</span>
@@ -1031,7 +1470,10 @@ export default function CommunityDetail() {
                   <button
                     type="button"
                     className="btn-create-first-room"
-                    onClick={() => setShowCreateRoomModal(true)}
+                    onClick={() => {
+                      setNewRoomMax(isProUser ? 15 : 5);
+                      setShowCreateRoomModal(true);
+                    }}
                   >
                     + Start a Meeting Room
                   </button>
@@ -1047,6 +1489,7 @@ export default function CommunityDetail() {
 
                   const canDelete = isCreator || isOwner || isMod;
                   const activeCount = room.activeParticipants?.length || 0;
+                  const roomLimit = room.maxParticipants || (room.isHostPro ? 15 : 5);
 
                   return (
                     <div
@@ -1058,7 +1501,10 @@ export default function CommunityDetail() {
                         <div className="comm-room-badge-row">
                           <span className="comm-room-live-pill">
                             <span className="live-dot" />
-                            {activeCount} / {room.maxParticipants || 10} Online
+                            {activeCount} / {roomLimit} Online ({room.isHostPro ? "Pro" : "Free"})
+                          </span>
+                          <span className={`comm-room-tier-badge ${room.isHostPro ? "pro" : "free"}`}>
+                            {room.isHostPro ? "👑 Pro Room (15 Max)" : "Free Room (5 Max)"}
                           </span>
                           {room.isPrivate && (
                             <span className="comm-room-locked-pill" title="Passcode protected">
@@ -1086,7 +1532,7 @@ export default function CommunityDetail() {
 
                       <div className="comm-room-card-footer">
                         <div className="comm-room-host-info">
-                          <AvatarFrame decoration={room.createdBy?.avatarDecoration} size="sm">
+                          <AvatarFrame frame={room.createdBy?.avatarDecoration} size="sm">
                             {room.createdBy?.avatar ? (
                               <img
                                 src={room.createdBy.avatar}
@@ -1126,43 +1572,599 @@ export default function CommunityDetail() {
           </div>
         )}
 
-        {/* TAB 3: MODERATION */}
+        {/* TAB 3: MODERATION & DASHBOARD */}
         {activeTab === "moderation" && isMod && (
-          <div className="comm-moderation-layout">
-            <h3>🛡️ Community Management</h3>
-            <div className="add-mod-box">
-              <h4>Appoint Moderator</h4>
-              <form onSubmit={handleAddModerator} className="add-mod-form">
-                <input
-                  type="text"
-                  placeholder="Enter member's exact username..."
-                  value={modTargetUsername}
-                  onChange={(e) => setModTargetUsername(e.target.value)}
-                  className="add-mod-input"
-                />
-                <button type="submit" className="add-mod-submit-btn" disabled={addingMod}>
-                  {addingMod ? <LoaderIcon size={16} /> : "Add Mod"}
+          <div className="comm-mod-dashboard">
+            {/* Moderation Subtabs */}
+            <div className="comm-mod-subtabs">
+              <button
+                type="button"
+                className={`comm-mod-subtab-btn ${modSubtab === "overview" ? "active" : ""}`}
+                onClick={() => setModSubtab("overview")}
+              >
+                <SlidersIcon size={15} />
+                <span>Overview</span>
+              </button>
+
+              <button
+                type="button"
+                className={`comm-mod-subtab-btn ${modSubtab === "members" ? "active" : ""}`}
+                onClick={() => setModSubtab("members")}
+              >
+                <UsersIcon size={15} />
+                <span>Manage Members</span>
+              </button>
+
+              <button
+                type="button"
+                className={`comm-mod-subtab-btn ${modSubtab === "reports" ? "active" : ""}`}
+                onClick={() => setModSubtab("reports")}
+              >
+                <AlertTriangleIcon size={15} />
+                <span>Reports</span>
+                {reports.filter((r) => r.status === "PENDING").length > 0 && (
+                  <span className="comm-mod-badge-count">
+                    {reports.filter((r) => r.status === "PENDING").length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={`comm-mod-subtab-btn ${modSubtab === "banned" ? "active" : ""}`}
+                onClick={() => setModSubtab("banned")}
+              >
+                <BanIcon size={15} />
+                <span>Banned Users ({bannedUsers.length})</span>
+              </button>
+
+              <button
+                type="button"
+                className={`comm-mod-subtab-btn ${modSubtab === "history" ? "active" : ""}`}
+                onClick={() => setModSubtab("history")}
+              >
+                <ClockIcon size={15} />
+                <span>Audit History</span>
+              </button>
+
+              {isOwner && (
+                <button
+                  type="button"
+                  className={`comm-mod-subtab-btn ${modSubtab === "settings" ? "active" : ""}`}
+                  onClick={() => setModSubtab("settings")}
+                >
+                  <SettingsIcon size={15} />
+                  <span>Settings</span>
                 </button>
-              </form>
+              )}
             </div>
 
-            <div className="current-mods-list">
-              <h4>Current Moderators</h4>
-              {community.moderators?.map((m) => (
-                <div key={m._id} className="mod-list-row">
-                  <span>@{m.username} ({m.displayName})</span>
-                  {isOwner && (
+            {/* SUBTAB 1: OVERVIEW */}
+            {modSubtab === "overview" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                {/* 4 Metrics */}
+                <div className="comm-mod-metrics-grid">
+                  <div className="comm-mod-metric-card">
+                    <div className="comm-mod-metric-icon" style={{ color: "#38bdf8" }}>
+                      👥
+                    </div>
+                    <div className="comm-mod-metric-info">
+                      <span className="comm-mod-metric-num">{community.memberCount || 0}</span>
+                      <span className="comm-mod-metric-label">Total Members</span>
+                    </div>
+                  </div>
+
+                  <div className="comm-mod-metric-card">
+                    <div className="comm-mod-metric-icon" style={{ color: "#818cf8" }}>
+                      🛡️
+                    </div>
+                    <div className="comm-mod-metric-info">
+                      <span className="comm-mod-metric-num">{(community.moderators?.length || 0) + 1}</span>
+                      <span className="comm-mod-metric-label">Active Moderators</span>
+                    </div>
+                  </div>
+
+                  <div className="comm-mod-metric-card">
+                    <div className="comm-mod-metric-icon" style={{ color: "#f87171" }}>
+                      🚫
+                    </div>
+                    <div className="comm-mod-metric-info">
+                      <span className="comm-mod-metric-num">{bannedUsers.length}</span>
+                      <span className="comm-mod-metric-label">Banned Users</span>
+                    </div>
+                  </div>
+
+                  <div className="comm-mod-metric-card">
+                    <div className="comm-mod-metric-icon" style={{ color: "#facc15" }}>
+                      ⚠️
+                    </div>
+                    <div className="comm-mod-metric-info">
+                      <span className="comm-mod-metric-num">{reports.filter((r) => r.status === "PENDING").length}</span>
+                      <span className="comm-mod-metric-label">Open Reports</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Add Moderator (Owner Only) */}
+                {isOwner && (
+                  <div className="add-mod-box">
+                    <h4>👑 Appoint Moderator</h4>
+                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>
+                      Appoint trusted members to help moderate chat, manage reports, and protect the community.
+                    </p>
+                    <form onSubmit={handleAddModerator} className="add-mod-form">
+                      <input
+                        type="text"
+                        placeholder="Enter member's exact username..."
+                        value={modTargetUsername}
+                        onChange={(e) => setModTargetUsername(e.target.value)}
+                        className="add-mod-input"
+                      />
+                      <button type="submit" className="add-mod-submit-btn" disabled={addingMod || !modTargetUsername.trim()}>
+                        {addingMod ? <LoaderIcon size={16} /> : "Add Moderator"}
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {/* Recent Audit Log Preview */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h4>Recent Moderation Events</h4>
                     <button
                       type="button"
-                      className="btn-remove-mod"
-                      onClick={() => handleRemoveModerator(m._id)}
+                      onClick={() => setModSubtab("history")}
+                      style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: 13, fontWeight: 700 }}
                     >
-                      Remove
+                      View All History →
                     </button>
+                  </div>
+                  {modLogs.slice(0, 5).map((log) => (
+                    <div key={log._id} className="comm-audit-item">
+                      <div className="comm-audit-left">
+                        <span className={`comm-audit-badge ${log.action.toLowerCase().includes("promote") ? "promote" : log.action.toLowerCase().includes("ban") ? "ban" : log.action.toLowerCase().includes("demote") ? "demote" : "remove"}`}>
+                          {log.action.replace("_", " ")}
+                        </span>
+                        <span style={{ fontSize: 13.5, color: "var(--text-main)" }}>
+                          <strong>@{log.moderator?.username || "mod"}</strong> performed action on{" "}
+                          <strong>@{log.targetUser?.username || "user"}</strong>
+                        </span>
+                      </div>
+                      <span className="comm-audit-time">
+                        {new Date(log.createdAt).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                  ))}
+                  {modLogs.length === 0 && (
+                    <p style={{ fontSize: 13, color: "var(--text-dim)" }}>No recent moderation events logged yet.</p>
                   )}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {/* SUBTAB 2: MEMBERS */}
+            {modSubtab === "members" && (
+              <div className="comm-members-layout">
+                <div className="comm-members-toolbar">
+                  <div className="comm-members-search-box">
+                    <SearchIcon size={16} />
+                    <input
+                      type="text"
+                      placeholder="Search members to moderate..."
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="comm-role-filter-pills">
+                    <button
+                      type="button"
+                      className={`comm-role-pill-btn ${selectedRoleFilter === "ALL" ? "active" : ""}`}
+                      onClick={() => setSelectedRoleFilter("ALL")}
+                    >
+                      All ({memberCounts.all || 0})
+                    </button>
+                    <button
+                      type="button"
+                      className={`comm-role-pill-btn ${selectedRoleFilter === "MODERATOR" ? "active" : ""}`}
+                      onClick={() => setSelectedRoleFilter("MODERATOR")}
+                    >
+                      🛡️ Moderators ({memberCounts.moderators || 0})
+                    </button>
+                    <button
+                      type="button"
+                      className={`comm-role-pill-btn ${selectedRoleFilter === "MEMBER" ? "active" : ""}`}
+                      onClick={() => setSelectedRoleFilter("MEMBER")}
+                    >
+                      🎓 Members ({memberCounts.members || 0})
+                    </button>
+                  </div>
+                </div>
+
+                <div className="comm-members-grid">
+                  {members.map((member) => {
+                    const isSelf = member._id === user?.id || member._id === user?._id;
+                    const canManage = (isOwner && !isSelf) || (isMod && member.role === "MEMBER" && !isSelf);
+
+                    return (
+                      <div key={member._id} className="comm-member-card">
+                        <div className="comm-member-top-row">
+                          <Link to={`/profile/${member.username}`} className="comm-member-user-link">
+                            <AvatarFrame frame={member.avatarDecoration} size="md">
+                              {member.avatar ? (
+                                <img src={member.avatar} alt={member.displayName} />
+                              ) : (
+                                (member.displayName || member.username || "U").charAt(0).toUpperCase()
+                              )}
+                            </AvatarFrame>
+                            <div className="comm-member-names">
+                              <span className="comm-member-display-name">{member.displayName || member.username}</span>
+                              <span className="comm-member-handle">@{member.username}</span>
+                            </div>
+                          </Link>
+                          <span className={`comm-member-role-tag ${member.role.toLowerCase()}`}>
+                            {member.role === "OWNER" && "👑 Owner"}
+                            {member.role === "MODERATOR" && "🛡️ Mod"}
+                            {member.role === "MEMBER" && "🎓 Member"}
+                          </span>
+                        </div>
+
+                        {canManage && (
+                          <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                            {isOwner && member.role === "MEMBER" && (
+                              <button
+                                type="button"
+                                className="comm-role-pill-btn"
+                                onClick={() => handlePromoteModerator(member._id, member.username)}
+                              >
+                                + Make Mod
+                              </button>
+                            )}
+
+                            {isOwner && member.role === "MODERATOR" && (
+                              <button
+                                type="button"
+                                className="comm-role-pill-btn"
+                                onClick={() => handleRemoveModerator(member._id, member.username)}
+                              >
+                                Demote
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              className="comm-role-pill-btn"
+                              style={{ color: "#f87171" }}
+                              onClick={() => handleRemoveMember(member._id, member.username)}
+                            >
+                              Remove
+                            </button>
+
+                            <button
+                              type="button"
+                              className="comm-role-pill-btn"
+                              style={{ color: "#f87171" }}
+                              onClick={() => {
+                                setBanModalUser(member);
+                                setBanReason("");
+                              }}
+                            >
+                              Ban
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* SUBTAB 3: REPORTS */}
+            {modSubtab === "reports" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["ALL", "PENDING", "RESOLVED", "DISMISSED"].map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      className={`comm-role-pill-btn ${reportStatusFilter === st ? "active" : ""}`}
+                      onClick={() => setReportStatusFilter(st)}
+                    >
+                      {st === "ALL" ? "All Reports" : st.charAt(0) + st.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+
+                {loadingReports ? (
+                  <div className="comm-rooms-loading">
+                    <LoaderIcon size={28} />
+                    <span>Loading reports...</span>
+                  </div>
+                ) : reports.length === 0 ? (
+                  <div className="comm-rooms-empty">
+                    <CheckCircleIcon size={40} />
+                    <h3>No reports found</h3>
+                    <p>There are currently no reports matching this filter.</p>
+                  </div>
+                ) : (
+                  <div className="comm-reports-list">
+                    {reports.map((r) => (
+                      <div key={r._id} className="comm-report-card">
+                        <div className="comm-report-header">
+                          <div>
+                            <span className="comm-report-reason-badge">{r.reason}</span>
+                            <div style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 6 }}>
+                              Reported by <strong>@{r.reporter?.username}</strong> on{" "}
+                              {new Date(r.createdAt).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                          <span className={`comm-report-status-badge ${r.status.toLowerCase()}`}>
+                            {r.status}
+                          </span>
+                        </div>
+
+                        {r.targetUser && (
+                          <div style={{ fontSize: 13.5, color: "var(--text-main)" }}>
+                            Target User: <strong>@{r.targetUser.username}</strong> ({r.targetUser.displayName})
+                          </div>
+                        )}
+
+                        {r.details && <div className="comm-report-details">{r.details}</div>}
+
+                        {r.resolutionNotes && (
+                          <div style={{ fontSize: 12.5, color: "var(--text-muted)", fontStyle: "italic" }}>
+                            Resolution notes: {r.resolutionNotes} (by @{r.resolvedBy?.username})
+                          </div>
+                        )}
+
+                        {r.status === "PENDING" && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+                            <textarea
+                              placeholder="Add resolution notes (optional)..."
+                              value={resolutionNotesMap[r._id] || ""}
+                              onChange={(e) =>
+                                setResolutionNotesMap({ ...resolutionNotesMap, [r._id]: e.target.value })
+                              }
+                              rows={2}
+                              style={{
+                                background: "rgba(0,0,0,0.25)",
+                                border: "1px solid var(--border-color)",
+                                borderRadius: 8,
+                                color: "var(--text-main)",
+                                padding: 8,
+                                fontSize: 13
+                              }}
+                            />
+                            <div className="comm-report-actions-row">
+                              <button
+                                type="button"
+                                className="comm-report-resolve-btn"
+                                onClick={() => handleResolveReport(r._id, "RESOLVED")}
+                                disabled={resolvingReportId === r._id}
+                              >
+                                Mark Resolved
+                              </button>
+                              <button
+                                type="button"
+                                className="comm-report-dismiss-btn"
+                                onClick={() => handleResolveReport(r._id, "DISMISSED")}
+                                disabled={resolvingReportId === r._id}
+                              >
+                                Dismiss Report
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUBTAB 4: BANNED USERS */}
+            {modSubtab === "banned" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {loadingBanned ? (
+                  <div className="comm-rooms-loading">
+                    <LoaderIcon size={28} />
+                    <span>Loading banned accounts...</span>
+                  </div>
+                ) : bannedUsers.length === 0 ? (
+                  <div className="comm-rooms-empty">
+                    <ShieldIcon size={40} />
+                    <h3>No banned users</h3>
+                    <p>No users are currently banned from this community.</p>
+                  </div>
+                ) : (
+                  <div className="comm-banned-list">
+                    {bannedUsers.map((b) => (
+                      <div key={b._id} className="comm-banned-card">
+                        <div className="comm-banned-user-info">
+                          <AvatarFrame size="md">
+                            {b.user?.avatar ? (
+                              <img src={b.user.avatar} alt={b.user.username} />
+                            ) : (
+                              (b.user?.displayName || b.user?.username || "U").charAt(0).toUpperCase()
+                            )}
+                          </AvatarFrame>
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <span style={{ fontWeight: 700, color: "var(--text-main)" }}>
+                              {b.user?.displayName || b.user?.username} (@{b.user?.username})
+                            </span>
+                            <span className="comm-banned-reason">Reason: {b.reason || "Violation of rules"}</span>
+                            <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
+                              Banned by @{b.bannedBy?.username || "mod"} on{" "}
+                              {new Date(b.bannedAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn-unban"
+                          onClick={() => handleUnbanMember(b.user?._id, b.user?.username)}
+                        >
+                          Unban User
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUBTAB 5: AUDIT LOG HISTORY */}
+            {modSubtab === "history" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {loadingLogs ? (
+                  <div className="comm-rooms-loading">
+                    <LoaderIcon size={28} />
+                    <span>Loading audit log...</span>
+                  </div>
+                ) : modLogs.length === 0 ? (
+                  <div className="comm-rooms-empty">
+                    <ClockIcon size={40} />
+                    <h3>No moderation history</h3>
+                    <p>All moderator actions will be logged here automatically.</p>
+                  </div>
+                ) : (
+                  <div className="comm-audit-timeline">
+                    {modLogs.map((log) => (
+                      <div key={log._id} className="comm-audit-item">
+                        <div className="comm-audit-left">
+                          <span
+                            className={`comm-audit-badge ${
+                              log.action.includes("PROMOTE")
+                                ? "promote"
+                                : log.action.includes("BAN")
+                                ? "ban"
+                                : log.action.includes("DEMOTE")
+                                ? "demote"
+                                : log.action.includes("UNBAN")
+                                ? "unban"
+                                : "remove"
+                            }`}
+                          >
+                            {log.action.replace(/_/g, " ")}
+                          </span>
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <span style={{ fontSize: 13.5, color: "var(--text-main)" }}>
+                              <strong>@{log.moderator?.username || "moderator"}</strong>{" "}
+                              {log.action.toLowerCase().replace(/_/g, " ")}{" "}
+                              {log.targetUser?.username && <strong>@{log.targetUser.username}</strong>}
+                            </span>
+                            {log.reason && (
+                              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                Reason: "{log.reason}"
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <span className="comm-audit-time">
+                          {new Date(log.createdAt).toLocaleDateString([], {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUBTAB 6: SETTINGS (Owner only) */}
+            {modSubtab === "settings" && isOwner && (
+              <form onSubmit={handleSaveSettings} style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 540 }}>
+                <div className="form-group">
+                  <label style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-main)", marginBottom: 6, display: "block" }}>
+                    Community Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.name}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, name: e.target.value })}
+                    maxLength={80}
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px",
+                      background: "rgba(0,0,0,0.3)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 8,
+                      color: "var(--text-main)"
+                    }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-main)", marginBottom: 6, display: "block" }}>
+                    Description / About
+                  </label>
+                  <textarea
+                    value={settingsForm.description}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, description: e.target.value })}
+                    rows={3}
+                    maxLength={400}
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px",
+                      background: "rgba(0,0,0,0.3)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: 8,
+                      color: "var(--text-main)"
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <label className="checkbox-label" style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={settingsForm.isPrivate}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, isPrivate: e.target.checked })}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-main)" }}>
+                      Make Community Private (Members must be invited or approved)
+                    </span>
+                  </label>
+
+                  <label className="checkbox-label" style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={settingsForm.allowMemberPosts}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, allowMemberPosts: e.target.checked })}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-main)" }}>
+                      Allow Members to post in Discussion & Feed
+                    </span>
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  className="glow-button"
+                  disabled={savingSettings || !settingsForm.name.trim()}
+                  style={{
+                    alignSelf: "flex-start",
+                    padding: "10px 24px",
+                    borderRadius: 8,
+                    background: "var(--primary)",
+                    color: "white",
+                    fontWeight: 700,
+                    border: "none",
+                    cursor: "pointer"
+                  }}
+                >
+                  {savingSettings ? <LoaderIcon size={16} /> : "Save Changes"}
+                </button>
+              </form>
+            )}
           </div>
         )}
       </div>
@@ -1180,6 +2182,14 @@ export default function CommunityDetail() {
               >
                 <XIcon size={18} />
               </button>
+            </div>
+
+            <div className="comm-room-limit-notice">
+              {isProUser ? (
+                <span>👑 <strong>ANOY Pro Account</strong>: You can host up to <strong>15 participants</strong> in this meeting room.</span>
+              ) : (
+                <span>ℹ️ <strong>Free Account</strong>: Meeting rooms host up to <strong>5 participants</strong>. ANOY Pro unlocks up to 15 participants.</span>
+              )}
             </div>
 
             <form onSubmit={handleCreateMeetingRoom} className="create-room-form">
@@ -1207,11 +2217,11 @@ export default function CommunityDetail() {
               </div>
 
               <div className="form-group">
-                <label>Max Capacity: {newRoomMax} Participants</label>
+                <label>Max Capacity: {newRoomMax} Participants ({isProUser ? "Pro max: 15" : "Free max: 5"})</label>
                 <input
                   type="range"
                   min="2"
-                  max="50"
+                  max={isProUser ? 15 : 5}
                   value={newRoomMax}
                   onChange={(e) => setNewRoomMax(Number(e.target.value))}
                 />
@@ -1255,6 +2265,133 @@ export default function CommunityDetail() {
                   disabled={!newRoomName.trim() || creatingRoom}
                 >
                   {creatingRoom ? <LoaderIcon size={16} /> : "Create & Launch"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Ban User Modal */}
+      {banModalUser && (
+        <div className="create-room-modal-overlay">
+          <div className="create-room-modal-card">
+            <div className="create-room-modal-header">
+              <h3 style={{ color: "#f87171" }}>🚫 Ban @{banModalUser.username} from Community</h3>
+              <button
+                type="button"
+                className="close-btn"
+                onClick={() => setBanModalUser(null)}
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: 13.5, color: "var(--text-muted)", marginBottom: 14 }}>
+              Banning this user will remove them from the community, revoke their chat/meeting room access, and prevent them from re-joining. Their global ANOY account will remain intact.
+            </p>
+
+            <form onSubmit={handleConfirmBan} className="create-room-form">
+              <div className="form-group">
+                <label>Ban Reason *</label>
+                <textarea
+                  required
+                  placeholder="e.g. Repeated violation of community guidelines / harassment"
+                  value={banReason}
+                  onChange={(e) => setBanReason(e.target.value)}
+                  rows={3}
+                  maxLength={300}
+                />
+              </div>
+
+              <div className="create-room-modal-actions">
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => setBanModalUser(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-create-submit"
+                  style={{ background: "#dc2626" }}
+                  disabled={banningUser || !banReason.trim()}
+                >
+                  {banningUser ? <LoaderIcon size={16} /> : "Confirm Ban"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Report User Modal */}
+      {reportModalUser && (
+        <div className="create-room-modal-overlay">
+          <div className="create-room-modal-card">
+            <div className="create-room-modal-header">
+              <h3>⚠️ Report @{reportModalUser.username} to Moderators</h3>
+              <button
+                type="button"
+                className="close-btn"
+                onClick={() => setReportModalUser(null)}
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: 13.5, color: "var(--text-muted)", marginBottom: 14 }}>
+              Your report will be sent to the community owner and moderators for review.
+            </p>
+
+            <form onSubmit={handleSubmitReport} className="create-room-form">
+              <div className="form-group">
+                <label>Reason *</label>
+                <select
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 14px",
+                    background: "rgba(0,0,0,0.4)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: 8,
+                    color: "var(--text-main)"
+                  }}
+                >
+                  <option value="Violation of community rules">Violation of community rules</option>
+                  <option value="Harassment / Bullying">Harassment / Bullying</option>
+                  <option value="Spam / Unsolicited promotion">Spam / Unsolicited promotion</option>
+                  <option value="Inappropriate content / Media">Inappropriate content / Media</option>
+                  <option value="Impersonation / Fake account">Impersonation / Fake account</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Additional Details (Optional)</label>
+                <textarea
+                  placeholder="Provide context or specify messages involved..."
+                  value={reportDetails}
+                  onChange={(e) => setReportDetails(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                />
+              </div>
+
+              <div className="create-room-modal-actions">
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => setReportModalUser(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-create-submit"
+                  disabled={submittingReport}
+                >
+                  {submittingReport ? <LoaderIcon size={16} /> : "Submit Report"}
                 </button>
               </div>
             </form>
@@ -1331,3 +2468,4 @@ export default function CommunityDetail() {
     </div>
   );
 }
+

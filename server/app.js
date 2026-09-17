@@ -17,6 +17,8 @@ const communityRoutes = require("./routes/communityRoutes");
 const mediaRoutes = require("./routes/mediaRoutes");
 const meetingRoomRoutes = require("./routes/meetingRoomRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
+const aiRoutes = require("./routes/aiRoutes");
+const settingsRoutes = require("./routes/settingsRoutes");
 
 const app = express();
 
@@ -28,7 +30,47 @@ app.use(
         }
     })
 );
-app.use(cors());
+const getAllowedOrigins = () => {
+    const raw = [
+        process.env.CLIENT_URL,
+        process.env.CORS_ORIGIN,
+        "https://anoyy.tech",
+        "https://www.anoyy.tech",
+        "http://localhost:5173",
+        "http://localhost:3000"
+    ].filter(Boolean);
+
+    const origins = [];
+    raw.forEach((item) => {
+        if (typeof item === "string" && item.includes(",")) {
+            item.split(",").forEach((sub) => origins.push(sub.trim()));
+        } else {
+            origins.push(item);
+        }
+    });
+    return [...new Set(origins)];
+};
+
+const allowedOrigins = getAllowedOrigins();
+
+app.use(
+    cors({
+        origin: (origin, callback) => {
+            if (!origin) return callback(null, true);
+            if (
+                allowedOrigins.includes("*") ||
+                allowedOrigins.includes(origin) ||
+                process.env.NODE_ENV !== "production"
+            ) {
+                return callback(null, true);
+            }
+            return callback(null, true);
+        },
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+    })
+);
 app.use(
     helmet({
         crossOriginResourcePolicy: { policy: "cross-origin" }
@@ -50,10 +92,13 @@ app.use("/api/v1/search", searchRoutes);
 app.use("/api/v1/conversations", conversationRoutes);
 app.use("/api/v1/premium", premiumRoutes);
 app.use("/api/v1/payments", paymentRoutes);
+app.use("/api/v1/ai", aiRoutes);
 app.use("/api/v1/communities", communityRoutes);
 app.use("/api/v1/media", mediaRoutes);
 app.use("/api/v1/meeting-rooms", meetingRoomRoutes);
 app.use("/api/v1/study-rooms", meetingRoomRoutes);
+app.use("/api/v1/settings", settingsRoutes);
+
 
 
 app.get("/", (req, res) => {
@@ -61,6 +106,23 @@ app.get("/", (req, res) => {
         success: true,
         message: "Welcome to ANOY Backend API 🚀",
         version: "1.0.0"
+    });
+});
+
+// 404 handler for undefined routes
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: `API route not found: ${req.method} ${req.originalUrl}`
+    });
+});
+
+// Global production error handler
+app.use((err, req, res, next) => {
+    console.error("Unhandled error:", err);
+    res.status(err.status || 500).json({
+        success: false,
+        message: process.env.NODE_ENV === "production" ? "Internal Server Error" : (err.message || "Internal Server Error")
     });
 });
 

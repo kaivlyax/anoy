@@ -1,5 +1,7 @@
 const Community = require("../models/Community");
 const CommunityBoost = require("../models/CommunityBoost");
+const ModerationLog = require("../models/ModerationLog");
+const CommunityReport = require("../models/CommunityReport");
 const Identity = require("../models/Identity");
 const Profile = require("../models/Profile");
 const { findItemById } = require("../config/storeCatalog");
@@ -227,6 +229,14 @@ const updateCommunity = async (req, res) => {
 
         await community.save();
 
+        await ModerationLog.create({
+            community: community._id,
+            moderator: req.user._id,
+            action: "UPDATE_SETTINGS",
+            reason: "Updated community settings/profile",
+            metadata: { name, isPrivate, settings }
+        }).catch((e) => console.warn("ModerationLog create error:", e));
+
         return res.status(200).json({
             success: true,
             message: "Community updated successfully",
@@ -245,6 +255,14 @@ const joinCommunity = async (req, res) => {
     try {
         const community = req.community;
         const userId = req.user._id;
+
+        const isBanned = community.bannedUsers?.some((b) => (b.user?._id ? b.user._id.equals(userId) : b.user?.equals?.(userId)));
+        if (isBanned) {
+            return res.status(403).json({
+                success: false,
+                message: "You have been banned from this community."
+            });
+        }
 
         if (!community.members.some((m) => m.equals(userId))) {
             community.members.push(userId);
@@ -300,15 +318,23 @@ const leaveCommunity = async (req, res) => {
 const addModerator = async (req, res) => {
     try {
         const community = req.community;
-        const { targetUserId } = req.body;
+        const { targetUserId, username } = req.body;
 
-        if (!targetUserId) {
-            return res.status(400).json({ success: false, message: "Target user ID required" });
+        let targetUser = null;
+        if (targetUserId) {
+            targetUser = await Identity.findById(targetUserId);
+        } else if (username) {
+            targetUser = await Identity.findOne({ username: username.toLowerCase().trim() });
         }
 
-        const targetUser = await Identity.findById(targetUserId);
         if (!targetUser) {
             return res.status(404).json({ success: false, message: "Target user not found" });
+        }
+
+        // Cannot promote if banned
+        const isBanned = community.bannedUsers?.some((b) => (b.user?._id ? b.user._id.equals(targetUser._id) : b.user?.equals?.(targetUser._id)));
+        if (isBanned) {
+            return res.status(400).json({ success: false, message: "Cannot promote a banned user to moderator" });
         }
 
         if (!community.members.some((m) => m.equals(targetUser._id))) {
@@ -320,6 +346,15 @@ const addModerator = async (req, res) => {
         }
 
         await community.save();
+
+        await ModerationLog.create({
+            community: community._id,
+            moderator: req.user._id,
+            targetUser: targetUser._id,
+            action: "PROMOTE_MODERATOR",
+            reason: req.body.reason || "Promoted to moderator by community owner",
+            metadata: { targetUsername: targetUser.username }
+        }).catch((e) => console.warn("ModerationLog error:", e));
 
         return res.status(200).json({
             success: true,
@@ -342,6 +377,14 @@ const removeModerator = async (req, res) => {
 
         community.moderators = community.moderators.filter((m) => m.toString() !== targetUserId);
         await community.save();
+
+        await ModerationLog.create({
+            community: community._id,
+            moderator: req.user._id,
+            targetUser: targetUserId,
+            action: "DEMOTE_MODERATOR",
+            reason: req.body?.reason || "Demoted from moderator to member by community owner"
+        }).catch((e) => console.warn("ModerationLog error:", e));
 
         return res.status(200).json({
             success: true,
@@ -378,6 +421,14 @@ const removeMember = async (req, res) => {
         community.moderators = community.moderators.filter((m) => m.toString() !== targetUserId);
         await community.save();
 
+        await ModerationLog.create({
+            community: community._id,
+            moderator: req.user._id,
+            targetUser: targetUserId,
+            action: "REMOVE_MEMBER",
+            reason: req.body?.reason || "Removed from community by moderator/owner"
+        }).catch((e) => console.warn("ModerationLog error:", e));
+
         return res.status(200).json({
             success: true,
             message: "Member removed from community",
@@ -385,6 +436,450 @@ const removeMember = async (req, res) => {
         });
     } catch (error) {
         console.error("removeMember error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Ban Member from Community (Owner or Moderator).
+ */
+const banCommunityMember = async (req, res) => {
+    try {
+        const community = req.community;
+        const { targetUserId } = req.params;
+        const { reason } = req.body;
+
+        if (community.owner.toString() === targetUserId) {
+            return res.status(403).json({ success: false, message: "Cannot ban the community owner" });
+        }
+
+        // If requester is moderator (not owner), they cannot ban other moderators
+        if (!community.owner.equals(req.user._id)) {
+            const isTargetMod = community.moderators.some((m) => m.toString() === targetUserId);
+            if (isTargetMod) {
+                return res.status(403).json({ success: false, message: "Moderators cannot ban fellow moderators" });
+            }
+        }
+
+        // Remove from members and moderators
+        community.members = community.members.filter((m) => m.toString() !== targetUserId);
+        community.moderators = community.moderators.filter((m) => m.toString() !== targetUserId);
+
+        // Add to bannedUsers if not already present
+        if (!community.bannedUsers) community.bannedUsers = [];
+        const alreadyBanned = community.bannedUsers.some((b) => (b.user?._id ? b.user._id.toString() === targetUserId : b.user?.toString() === targetUserId));
+
+        if (!alreadyBanned) {
+            community.bannedUsers.push({
+                user: targetUserId,
+                bannedBy: req.user._id,
+                reason: reason || "Violation of community rules",
+                bannedAt: new Date()
+            });
+        }
+
+        await community.save();
+
+        await ModerationLog.create({
+            community: community._id,
+            moderator: req.user._id,
+            targetUser: targetUserId,
+            action: "BAN_MEMBER",
+            reason: reason || "Violation of community rules"
+        }).catch((e) => console.warn("ModerationLog error:", e));
+
+        return res.status(200).json({
+            success: true,
+            message: "User banned from community",
+            bannedUsers: community.bannedUsers
+        });
+    } catch (error) {
+        console.error("banCommunityMember error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Unban Member from Community (Owner or Moderator).
+ */
+const unbanCommunityMember = async (req, res) => {
+    try {
+        const community = req.community;
+        const { targetUserId } = req.params;
+
+        community.bannedUsers = (community.bannedUsers || []).filter(
+            (b) => (b.user?._id ? b.user._id.toString() !== targetUserId : b.user?.toString() !== targetUserId)
+        );
+
+        await community.save();
+
+        await ModerationLog.create({
+            community: community._id,
+            moderator: req.user._id,
+            targetUser: targetUserId,
+            action: "UNBAN_MEMBER",
+            reason: req.body?.reason || "Unbanned by moderator"
+        }).catch((e) => console.warn("ModerationLog error:", e));
+
+        return res.status(200).json({
+            success: true,
+            message: "User unbanned from community"
+        });
+    } catch (error) {
+        console.error("unbanCommunityMember error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Get Banned Members of a Community (Owner or Moderator).
+ */
+const getBannedMembers = async (req, res) => {
+    try {
+        const community = req.community;
+        const bannedList = community.bannedUsers || [];
+
+        const userIds = [];
+        bannedList.forEach((b) => {
+            if (b.user) userIds.push(b.user);
+            if (b.bannedBy) userIds.push(b.bannedBy);
+        });
+
+        const profiles = await Profile.find({ userId: { $in: userIds } });
+        const profileMap = new Map(profiles.map((p) => [p.userId.toString(), p]));
+
+        const results = bannedList.map((b) => {
+            const uId = b.user?.toString();
+            const byId = b.bannedBy?.toString();
+            const uProf = profileMap.get(uId);
+            const byProf = profileMap.get(byId);
+
+            return {
+                _id: b._id,
+                bannedAt: b.bannedAt,
+                reason: b.reason,
+                user: {
+                    _id: uId,
+                    username: uProf?.username || "unknown",
+                    displayName: uProf?.displayName || uProf?.username || "Unknown",
+                    avatar: uProf?.avatar || "",
+                    isPro: uProf?.isPro || false
+                },
+                bannedBy: {
+                    _id: byId,
+                    username: byProf?.username || "moderator",
+                    displayName: byProf?.displayName || byProf?.username || "Moderator"
+                }
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            count: results.length,
+            bannedUsers: results
+        });
+    } catch (error) {
+        console.error("getBannedMembers error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Get Community Members with search and role filters.
+ */
+const getCommunityMembers = async (req, res) => {
+    try {
+        const community = req.community;
+        const { q, role, page = 1, limit = 30 } = req.query;
+
+        // Build list of all member IDs
+        const ownerId = community.owner?.toString();
+        const modIds = new Set((community.moderators || []).map((m) => m.toString()));
+        const memberIds = new Set((community.members || []).map((m) => m.toString()));
+        if (ownerId) memberIds.add(ownerId);
+
+        const allUserIds = Array.from(memberIds);
+
+        const profileFilter = { userId: { $in: allUserIds } };
+        if (q && q.trim()) {
+            const regex = new RegExp(q.trim(), "i");
+            profileFilter.$or = [{ username: regex }, { displayName: regex }];
+        }
+
+        const profiles = await Profile.find(profileFilter);
+
+        let mapped = profiles.map((p) => {
+            const uId = p.userId.toString();
+            let r = "MEMBER";
+            if (uId === ownerId) r = "OWNER";
+            else if (modIds.has(uId)) r = "MODERATOR";
+
+            return {
+                _id: p.userId,
+                username: p.username,
+                displayName: p.displayName || p.username,
+                avatar: p.avatar || "",
+                avatarDecoration: p.avatarDecoration || "",
+                bio: p.bio || "",
+                skills: p.skills || [],
+                isPro: p.isPro || false,
+                role: r,
+                joinedAt: p.createdAt
+            };
+        });
+
+        const counts = {
+            all: profiles.length,
+            owners: mapped.filter((m) => m.role === "OWNER").length,
+            moderators: mapped.filter((m) => m.role === "MODERATOR").length,
+            members: mapped.filter((m) => m.role === "MEMBER").length
+        };
+
+        if (role && role !== "ALL") {
+            mapped = mapped.filter((m) => m.role === role.toUpperCase());
+        }
+
+        // Sort: OWNER first, MODERATOR next, then MEMBER, sorted by name
+        const roleOrder = { OWNER: 0, MODERATOR: 1, MEMBER: 2 };
+        mapped.sort((a, b) => {
+            const orderDiff = (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3);
+            if (orderDiff !== 0) return orderDiff;
+            return a.displayName.localeCompare(b.displayName);
+        });
+
+        const p = Math.max(parseInt(page, 10) || 1, 1);
+        const l = Math.min(Math.max(parseInt(limit, 10) || 30, 1), 100);
+        const startIndex = (p - 1) * l;
+        const paginated = mapped.slice(startIndex, startIndex + l);
+
+        return res.status(200).json({
+            success: true,
+            total: mapped.length,
+            page: p,
+            limit: l,
+            counts,
+            members: paginated
+        });
+    } catch (error) {
+        console.error("getCommunityMembers error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Get Moderation Audit Logs (Owner or Moderator).
+ */
+const getModerationLogs = async (req, res) => {
+    try {
+        const community = req.community;
+        const logs = await ModerationLog.find({ community: community._id })
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .populate("moderator", "username")
+            .populate("targetUser", "username");
+
+        const userIds = new Set();
+        logs.forEach((log) => {
+            if (log.moderator?._id) userIds.add(log.moderator._id.toString());
+            if (log.targetUser?._id) userIds.add(log.targetUser._id.toString());
+        });
+
+        const profiles = await Profile.find({ userId: { $in: Array.from(userIds) } });
+        const profileMap = new Map(profiles.map((p) => [p.userId.toString(), p]));
+
+        const results = logs.map((log) => {
+            const modId = log.moderator?._id?.toString();
+            const targetId = log.targetUser?._id?.toString();
+            const modProf = modId ? profileMap.get(modId) : null;
+            const targetProf = targetId ? profileMap.get(targetId) : null;
+
+            return {
+                _id: log._id,
+                action: log.action,
+                reason: log.reason,
+                metadata: log.metadata,
+                createdAt: log.createdAt,
+                moderator: log.moderator
+                    ? {
+                          _id: log.moderator._id,
+                          username: log.moderator.username || modProf?.username || "moderator",
+                          displayName: modProf?.displayName || log.moderator.username || "Moderator",
+                          avatar: modProf?.avatar || ""
+                      }
+                    : null,
+                targetUser: log.targetUser
+                    ? {
+                          _id: log.targetUser._id,
+                          username: log.targetUser.username || targetProf?.username || "user",
+                          displayName: targetProf?.displayName || log.targetUser.username || "User",
+                          avatar: targetProf?.avatar || ""
+                      }
+                    : null
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            count: results.length,
+            logs: results
+        });
+    } catch (error) {
+        console.error("getModerationLogs error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Submit Community Report.
+ */
+const createCommunityReport = async (req, res) => {
+    try {
+        const community = req.community;
+        const { targetUserId, targetMessageId, targetMeetingRoomId, reason, details } = req.body;
+
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ success: false, message: "Report reason is required" });
+        }
+
+        const report = await CommunityReport.create({
+            community: community._id,
+            reporter: req.user._id,
+            targetUser: targetUserId || null,
+            targetMessage: targetMessageId || null,
+            targetMeetingRoom: targetMeetingRoomId || null,
+            reason: reason.trim(),
+            details: (details || "").trim(),
+            status: "PENDING"
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Report submitted to community moderators",
+            report
+        });
+    } catch (error) {
+        console.error("createCommunityReport error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Get Community Reports (Owner or Moderator).
+ */
+const getCommunityReports = async (req, res) => {
+    try {
+        const community = req.community;
+        const { status } = req.query;
+
+        const filter = { community: community._id };
+        if (status && status !== "ALL") {
+            filter.status = status.toUpperCase();
+        }
+
+        const reports = await CommunityReport.find(filter)
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .populate("reporter", "username")
+            .populate("targetUser", "username")
+            .populate("resolvedBy", "username");
+
+        const userIds = new Set();
+        reports.forEach((r) => {
+            if (r.reporter?._id) userIds.add(r.reporter._id.toString());
+            if (r.targetUser?._id) userIds.add(r.targetUser._id.toString());
+            if (r.resolvedBy?._id) userIds.add(r.resolvedBy._id.toString());
+        });
+
+        const profiles = await Profile.find({ userId: { $in: Array.from(userIds) } });
+        const profileMap = new Map(profiles.map((p) => [p.userId.toString(), p]));
+
+        const results = reports.map((r) => {
+            const repProf = r.reporter ? profileMap.get(r.reporter._id.toString()) : null;
+            const targetProf = r.targetUser ? profileMap.get(r.targetUser._id.toString()) : null;
+            const resProf = r.resolvedBy ? profileMap.get(r.resolvedBy._id.toString()) : null;
+
+            return {
+                _id: r._id,
+                reason: r.reason,
+                details: r.details,
+                status: r.status,
+                resolutionNotes: r.resolutionNotes,
+                createdAt: r.createdAt,
+                resolvedAt: r.resolvedAt,
+                reporter: r.reporter
+                    ? {
+                          _id: r.reporter._id,
+                          username: r.reporter.username || repProf?.username || "reporter",
+                          displayName: repProf?.displayName || r.reporter.username || "Reporter",
+                          avatar: repProf?.avatar || ""
+                      }
+                    : null,
+                targetUser: r.targetUser
+                    ? {
+                          _id: r.targetUser._id,
+                          username: r.targetUser.username || targetProf?.username || "user",
+                          displayName: targetProf?.displayName || r.targetUser.username || "User",
+                          avatar: targetProf?.avatar || ""
+                      }
+                    : null,
+                resolvedBy: r.resolvedBy
+                    ? {
+                          _id: r.resolvedBy._id,
+                          username: r.resolvedBy.username || resProf?.username || "moderator",
+                          displayName: resProf?.displayName || r.resolvedBy.username || "Moderator"
+                      }
+                    : null
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            count: results.length,
+            reports: results
+        });
+    } catch (error) {
+        console.error("getCommunityReports error:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+/**
+ * Resolve Community Report (Owner or Moderator).
+ */
+const resolveCommunityReport = async (req, res) => {
+    try {
+        const community = req.community;
+        const { reportId } = req.params;
+        const { status, resolutionNotes } = req.body;
+
+        const report = await CommunityReport.findOne({ _id: reportId, community: community._id });
+        if (!report) {
+            return res.status(404).json({ success: false, message: "Report not found" });
+        }
+
+        const validStatus = status === "RESOLVED" || status === "DISMISSED" ? status : "RESOLVED";
+        report.status = validStatus;
+        report.resolvedBy = req.user._id;
+        report.resolvedAt = new Date();
+        report.resolutionNotes = resolutionNotes || "";
+        await report.save();
+
+        await ModerationLog.create({
+            community: community._id,
+            moderator: req.user._id,
+            targetUser: report.targetUser,
+            action: validStatus === "RESOLVED" ? "RESOLVE_REPORT" : "DISMISS_REPORT",
+            reason: resolutionNotes || `Report ${validStatus.toLowerCase()}`,
+            metadata: { reportId: report._id, reportReason: report.reason }
+        }).catch((e) => console.warn("ModerationLog error:", e));
+
+        return res.status(200).json({
+            success: true,
+            message: `Report ${validStatus.toLowerCase()} successfully`,
+            report
+        });
+    } catch (error) {
+        console.error("resolveCommunityReport error:", error);
         return res.status(500).json({ success: false, message: "Server error" });
     }
 };
@@ -573,6 +1068,14 @@ module.exports = {
     addModerator,
     removeModerator,
     removeMember,
+    banCommunityMember,
+    unbanCommunityMember,
+    getBannedMembers,
+    getCommunityMembers,
+    getModerationLogs,
+    createCommunityReport,
+    getCommunityReports,
+    resolveCommunityReport,
     boostCommunity,
     getBoosters,
     updateCommunityDecorations,

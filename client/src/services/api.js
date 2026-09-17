@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:5001/api/v1";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "/api/v1" : "http://localhost:5001/api/v1");
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -44,7 +46,21 @@ export const authApi = {
   login: (credentials) => api.post("/auth/login", credentials),
   register: (data) => api.post("/auth/register", data),
   verifyEmail: (data) => api.post("/auth/verify-email", data),
-  resendOtp: (data) => api.post("/auth/resend-otp", data)
+  resendOtp: (data) => api.post("/auth/resend-otp", data),
+  forgotPassword: (data) => api.post("/auth/forgot-password", data),
+  resetPassword: (data) => api.post("/auth/reset-password", data)
+};
+
+export const settingsApi = {
+  getSettings: () => api.get("/settings"),
+  changePassword: (data) => api.post("/settings/change-password", data),
+  updatePrivacy: (data) => api.put("/settings/privacy", data),
+  updateNotifications: (data) => api.put("/settings/notifications", data),
+  getBlockedUsers: () => api.get("/settings/blocked"),
+  blockUser: (username) => api.post(`/settings/block/${encodeURIComponent(username)}`),
+  unblockUser: (username) => api.post(`/settings/unblock/${encodeURIComponent(username)}`),
+  logoutAllDevices: () => api.post("/settings/logout-all"),
+  deleteAccount: (data) => api.post("/settings/delete-account", data)
 };
 
 export const postApi = {
@@ -52,6 +68,8 @@ export const postApi = {
     api.get(`/posts/feed?page=${page}&limit=${limit}`),
   getExploreFeed: (page = 1, limit = 10) =>
     api.get(`/posts?page=${page}&limit=${limit}`),
+  getTrendingTopics: (limit = 5) =>
+    api.get(`/posts/trending?limit=${limit}`),
   getPostById: (id) => api.get(`/posts/${id}`),
   createPost: (data) => api.post("/posts", data),
   updatePost: (id, data) => api.patch(`/posts/${id}`, data),
@@ -137,6 +155,14 @@ export const paymentApi = {
   getPaymentHistory: () => api.get("/payments/history")
 };
 
+export const aiApi = {
+  chat: (data) => api.post("/ai/chat", data),
+  getConversations: () => api.get("/ai/conversations"),
+  getMessages: (conversationId) => api.get(`/ai/conversations/${conversationId}/messages`),
+  deleteConversation: (conversationId) => api.delete(`/ai/conversations/${conversationId}`)
+};
+
+
 
 export const communityApi = {
   getCommunities: (params = {}) => api.get("/communities", { params }),
@@ -145,9 +171,17 @@ export const communityApi = {
   updateCommunity: (id, data) => api.put(`/communities/${id}`, data),
   joinCommunity: (id) => api.post(`/communities/${id}/join`),
   leaveCommunity: (id) => api.post(`/communities/${id}/leave`),
-  addModerator: (id, targetUserId) => api.post(`/communities/${id}/moderators`, { targetUserId }),
+  getMembers: (id, params = {}) => api.get(`/communities/${id}/members`, { params }),
+  addModerator: (id, targetUserId, reason = "") => api.post(`/communities/${id}/moderators`, { targetUserId, reason }),
   removeModerator: (id, targetUserId) => api.delete(`/communities/${id}/moderators/${targetUserId}`),
-  removeMember: (id, targetUserId) => api.delete(`/communities/${id}/members/${targetUserId}`),
+  removeMember: (id, targetUserId, reason = "") => api.delete(`/communities/${id}/members/${targetUserId}`, { data: { reason } }),
+  banMember: (id, targetUserId, reason = "") => api.post(`/communities/${id}/members/${targetUserId}/ban`, { reason }),
+  unbanMember: (id, targetUserId) => api.post(`/communities/${id}/members/${targetUserId}/unban`),
+  getBannedMembers: (id) => api.get(`/communities/${id}/banned`),
+  getModerationLogs: (id) => api.get(`/communities/${id}/moderation-logs`),
+  createReport: (id, data) => api.post(`/communities/${id}/reports`, data),
+  getReports: (id, params = {}) => api.get(`/communities/${id}/reports`, { params }),
+  resolveReport: (id, reportId, data) => api.put(`/communities/${id}/reports/${reportId}`, data),
   boostCommunity: (id) => api.post(`/communities/${id}/boost`),
   getBoosters: (id) => api.get(`/communities/${id}/boosters`),
   updateDecorations: (id, data) => api.put(`/communities/${id}/decorations`, data),

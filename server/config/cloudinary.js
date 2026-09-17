@@ -24,23 +24,27 @@ if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Allowed MIME types
+// Allowed MIME types: Images & Videos
 const ALLOWED_MIME_TYPES = [
     "image/jpeg",
     "image/jpg",
     "image/png",
     "image/webp",
-    "image/gif"
+    "image/gif",
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/ogg"
 ];
 
 // Memory storage for buffer processing
 const storage = multer.memoryStorage();
 
-// Multer upload middleware with strict file filter and 5MB limit
+// Multer upload middleware with strict file filter and 25MB limit
 const upload = multer({
     storage,
     limits: {
-        fileSize: 5 * 1024 * 1024 // 5 MB
+        fileSize: 25 * 1024 * 1024 // 25 MB
     },
     fileFilter: (req, file, cb) => {
         if (ALLOWED_MIME_TYPES.includes(file.mimetype.toLowerCase())) {
@@ -48,7 +52,7 @@ const upload = multer({
         } else {
             cb(
                 new Error(
-                    "Invalid file type. Only JPG, PNG, WEBP, and GIF images are allowed."
+                    "Invalid file type. Only JPG, PNG, WEBP, GIF images and MP4, WEBM, MOV videos are allowed."
                 )
             );
         }
@@ -60,7 +64,7 @@ const upload = multer({
  * @param {Buffer} buffer
  * @param {string} originalname
  * @param {string} mimetype
- * @returns {Promise<{url: string, publicId: string, format: string, size: number, width?: number, height?: number}>}
+ * @returns {Promise<{url: string, publicId: string, format: string, size: number, width?: number, height?: number, resourceType: string}>}
  */
 const uploadMedia = async (buffer, originalname, mimetype) => {
     const isCloudinaryConfigured = Boolean(
@@ -69,13 +73,16 @@ const uploadMedia = async (buffer, originalname, mimetype) => {
         process.env.CLOUDINARY_API_SECRET
     );
 
+    const isVideo = mimetype.toLowerCase().startsWith("video/");
+    const resourceType = isVideo ? "video" : "image";
+
     if (isCloudinaryConfigured) {
         return new Promise((resolve, reject) => {
             const stream = cloudinary.uploader.upload_stream(
                 {
-                    folder: "anoy/chat_media",
-                    resource_type: "image",
-                    transformation: [{ quality: "auto", fetch_format: "auto" }]
+                    folder: "anoy/posts",
+                    resource_type: resourceType,
+                    transformation: isVideo ? undefined : [{ quality: "auto", fetch_format: "auto" }]
                 },
                 (error, result) => {
                     if (error) {
@@ -89,7 +96,8 @@ const uploadMedia = async (buffer, originalname, mimetype) => {
                         height: result.height,
                         format: result.format,
                         size: result.bytes,
-                        originalName: originalname
+                        originalName: originalname,
+                        resourceType: isVideo ? "VIDEO" : "IMAGE"
                     });
                 }
             );
@@ -114,7 +122,8 @@ const uploadMedia = async (buffer, originalname, mimetype) => {
         height: null,
         format: ext.replace(".", ""),
         size: buffer.length,
-        originalName: originalname
+        originalName: originalname,
+        resourceType: isVideo ? "VIDEO" : "IMAGE"
     };
 };
 

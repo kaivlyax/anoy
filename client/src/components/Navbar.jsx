@@ -1,6 +1,7 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
+import AnoyLogo from "./AnoyLogo";
 import {
   HomeIcon,
   CompassIcon,
@@ -8,7 +9,9 @@ import {
   BellIcon,
   UserIcon,
   LogOutIcon,
-  UsersIcon
+  UsersIcon,
+  SparklesIcon,
+  SettingsIcon
 } from "./Icons";
 import NotificationBadge from "./NotificationBadge";
 
@@ -25,15 +28,35 @@ export function MobileNavbar() {
   const displayName = profile?.displayName || username;
 
   return (
-    <header className="mobile-navbar">
-      <Link to="/" className="brand-logo" style={{ padding: 0 }} aria-label="ANOY Home">
-        <div className="brand-logo-badge" style={{ width: 32, height: 32, fontSize: 16 }}>
-          A
-        </div>
-        <span style={{ fontSize: 18 }}>ANOY</span>
+    <header className="mobile-navbar glass-panel">
+      <Link to="/" className="mobile-brand-link" aria-label="ANOY Home">
+        <AnoyLogo
+          variant="navbar"
+          showTagline={true}
+          clickable={false}
+        />
       </Link>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Link
+          to="/ai"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2))",
+            border: "1px solid rgba(56, 189, 248, 0.4)",
+            color: "#38bdf8"
+          }}
+          aria-label="Open ANOY AI"
+          title="ANOY AI Assistant"
+        >
+          <SparklesIcon size={16} />
+        </Link>
+
         <Link
           to={`/profile/${username}`}
           style={{ display: "flex", alignItems: "center" }}
@@ -57,6 +80,20 @@ export function MobileNavbar() {
           </div>
         </Link>
 
+        <Link
+          to="/settings"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--text-muted)",
+            padding: 4
+          }}
+          aria-label="Settings"
+        >
+          <SettingsIcon size={18} />
+        </Link>
+
         <button
           className="logout-icon-btn"
           onClick={handleLogout}
@@ -75,7 +112,7 @@ export function MobileBottomNav() {
   const username = user?.username || "user";
 
   return (
-    <nav className="mobile-bottom-nav" aria-label="Mobile Bottom Navigation">
+    <nav className="mobile-bottom-nav glass-panel" aria-label="Mobile Bottom Navigation">
       <NavLink
         to="/"
         end
