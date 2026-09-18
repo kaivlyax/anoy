@@ -103,6 +103,7 @@ const uploadMedia = async (buffer, originalname, mimetype) => {
                 stream.end(buffer);
             });
         } catch (cloudErr) {
+            if (process.env.NODE_ENV === "production") throw cloudErr;
             console.warn("Cloudinary upload failed, falling back to local disk:", cloudErr.message || cloudErr);
         }
     }
