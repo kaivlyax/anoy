@@ -1,4 +1,5 @@
 const Profile = require("../models/Profile");
+const Identity = require("../models/Identity");
 const Follow = require("../models/Follow");
 const { isProfilePro } = require("../middleware/premiumMiddleware");
 
@@ -155,6 +156,15 @@ const getProfile = async (req, res) => {
         });
 
         if (!profile) {
+            return res.status(404).json({
+                success: false,
+                message: "Profile not found"
+            });
+        }
+
+        // Verify that the underlying Identity exists and is not DELETED
+        const identity = await Identity.findById(profile.userId);
+        if (!identity || identity.status === "DELETED") {
             return res.status(404).json({
                 success: false,
                 message: "Profile not found"
@@ -510,12 +520,19 @@ const getProfileStats = async (req, res) => {
 
 
         if (!profile) {
-
             return res.status(404).json({
                 success: false,
                 message: "Profile not found"
             });
+        }
 
+        // Verify that the underlying Identity exists and is not DELETED
+        const identity = await Identity.findById(profile.userId);
+        if (!identity || identity.status === "DELETED") {
+            return res.status(404).json({
+                success: false,
+                message: "Profile not found"
+            });
         }
 
 

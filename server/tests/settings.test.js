@@ -18,6 +18,10 @@ const Profile = require("../models/Profile");
 const Block = require("../models/Block");
 const Follow = require("../models/Follow");
 const Post = require("../models/Post");
+const Community = require("../models/Community");
+const Comment = require("../models/Comment");
+const Like = require("../models/Like");
+const Notification = require("../models/Notification");
 
 describe("Settings & Account Management Controller Unit Tests", () => {
     const mockUserId = new mongoose.Types.ObjectId();
@@ -364,14 +368,19 @@ describe("Settings & Account Management Controller Unit Tests", () => {
         await deleteAccount(req1, res1);
         expect(res1.status).toHaveBeenCalledWith(400);
 
-        // Good confirmation & password -> sets status DELETED and soft-deletes posts
+        // Good confirmation & password -> sets status DELETED and cleans up data
         const saveMock = jest.fn().mockResolvedValue(true);
         const userInstance = { ...mockUser, save: saveMock };
         jest.spyOn(Identity, "findById").mockResolvedValue(userInstance);
         jest.spyOn(bcrypt, "compare").mockResolvedValue(true);
+        const profileDeleteSpy = jest.spyOn(Profile, "deleteMany").mockResolvedValue({ deletedCount: 1 });
         const postUpdateSpy = jest.spyOn(Post, "updateMany").mockResolvedValue({ modifiedCount: 3 });
+        const commentUpdateSpy = jest.spyOn(Comment, "updateMany").mockResolvedValue({ modifiedCount: 2 });
+        const likeDeleteSpy = jest.spyOn(Like, "deleteMany").mockResolvedValue({ deletedCount: 5 });
+        const communityUpdateSpy = jest.spyOn(Community, "updateMany").mockResolvedValue({ modifiedCount: 1 });
         const followDeleteSpy = jest.spyOn(Follow, "deleteMany").mockResolvedValue({ deletedCount: 0 });
         const blockDeleteSpy = jest.spyOn(Block, "deleteMany").mockResolvedValue({ deletedCount: 0 });
+        const notificationDeleteSpy = jest.spyOn(Notification, "deleteMany").mockResolvedValue({ deletedCount: 0 });
 
         const req2 = {
             user: mockUser,
@@ -385,7 +394,20 @@ describe("Settings & Account Management Controller Unit Tests", () => {
         await deleteAccount(req2, res2);
 
         expect(userInstance.status).toBe("DELETED");
+        expect(profileDeleteSpy).toHaveBeenCalledWith({ userId: mockUserId });
         expect(postUpdateSpy).toHaveBeenCalledWith({ author: mockUserId }, { isDeleted: true });
+        expect(commentUpdateSpy).toHaveBeenCalledWith({ author: mockUserId }, { isDeleted: true });
+        expect(likeDeleteSpy).toHaveBeenCalledWith({ user: mockUserId });
+        expect(communityUpdateSpy).toHaveBeenCalledTimes(2);
+        expect(followDeleteSpy).toHaveBeenCalledWith({
+            $or: [{ follower: mockUserId }, { following: mockUserId }]
+        });
+        expect(blockDeleteSpy).toHaveBeenCalledWith({
+            $or: [{ blocker: mockUserId }, { blocked: mockUserId }]
+        });
+        expect(notificationDeleteSpy).toHaveBeenCalledWith({
+            $or: [{ recipient: mockUserId }, { sender: mockUserId }]
+        });
         expect(res2.status).toHaveBeenCalledWith(200);
         expect(res2.json).toHaveBeenCalledWith(
             expect.objectContaining({

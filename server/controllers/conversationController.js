@@ -55,7 +55,7 @@ const getUserConversations = async (req, res) => {
         const conversations = await Conversation.find({
             participants: req.user._id
         })
-            .populate("participants", "username email")
+            .populate("participants", "username")
             .populate({
                 path: "lastMessage",
                 populate: { path: "sender", select: "username" }
@@ -122,7 +122,7 @@ const getOrCreateConversation = async (req, res) => {
             });
         }
 
-        if (!recipient) {
+        if (!recipient || recipient.status === "DELETED") {
             return res.status(404).json({
                 success: false,
                 message: "Recipient user not found"
@@ -178,7 +178,7 @@ const getOrCreateConversation = async (req, res) => {
                 $size: 2
             }
         })
-            .populate("participants", "username email")
+            .populate("participants", "username")
             .populate({
                 path: "lastMessage",
                 populate: { path: "sender", select: "username" }
@@ -193,7 +193,7 @@ const getOrCreateConversation = async (req, res) => {
             await conversation.save();
 
             conversation = await Conversation.findById(conversation._id)
-                .populate("participants", "username email");
+                .populate("participants", "username");
             isNew = true;
         }
 

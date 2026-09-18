@@ -94,11 +94,18 @@ const getCommunity = async (req, res) => {
         }
 
         // Fetch owner and moderator profile details
-        const ownerIdentity = await Identity.findById(community.owner);
-        const ownerProfile = await Profile.findOne({ userId: community.owner });
+        const deletedUsers = await Identity.find({ status: "DELETED" }).select("_id");
+        const deletedUserIds = new Set(deletedUsers.map((u) => u._id.toString()));
 
-        const modProfiles = await Profile.find({ userId: { $in: community.moderators } });
-        const memberProfiles = await Profile.find({ userId: { $in: community.members } }).limit(20);
+        const ownerIdentity = await Identity.findById(community.owner);
+        const isOwnerDeleted = !ownerIdentity || ownerIdentity.status === "DELETED";
+        const ownerProfile = isOwnerDeleted ? null : await Profile.findOne({ userId: community.owner });
+
+        const validModeratorIds = (community.moderators || []).filter((m) => !deletedUserIds.has(m.toString()));
+        const validMemberIds = (community.members || []).filter((m) => !deletedUserIds.has(m.toString()));
+
+        const modProfiles = await Profile.find({ userId: { $in: validModeratorIds } });
+        const memberProfiles = await Profile.find({ userId: { $in: validMemberIds } }).limit(20);
 
         const currentUserId = req.user?._id;
 
@@ -112,14 +119,16 @@ const getCommunity = async (req, res) => {
                 avatar: community.avatar,
                 coverImage: community.coverImage,
                 isPrivate: community.isPrivate,
-                owner: {
-                    _id: community.owner,
-                    username: ownerIdentity?.username || ownerProfile?.username || "unknown",
-                    displayName: ownerProfile?.displayName || ownerIdentity?.username || "Unknown",
-                    avatar: ownerProfile?.avatar || "",
-                    isPro: ownerProfile?.isPro || false,
-                    avatarDecoration: ownerProfile?.avatarDecoration || ""
-                },
+                owner: isOwnerDeleted
+                    ? null
+                    : {
+                          _id: community.owner,
+                          username: ownerIdentity.username || ownerProfile?.username || "unknown",
+                          displayName: ownerProfile?.displayName || ownerIdentity.username || "Unknown",
+                          avatar: ownerProfile?.avatar || "",
+                          isPro: ownerProfile?.isPro || false,
+                          avatarDecoration: ownerProfile?.avatarDecoration || ""
+                      },
                 moderators: modProfiles.map((p) => ({
                     _id: p.userId,
                     username: p.username,
@@ -134,7 +143,7 @@ const getCommunity = async (req, res) => {
                     avatar: p.avatar,
                     isPro: p.isPro || false
                 })),
-                memberCount: community.members?.length || 0,
+                memberCount: validMemberIds.length,
                 boostCount: community.boostCount || 0,
                 boostLevel: community.boostLevel || 0,
                 isBoosted: Boolean(community.isBoosted),
@@ -327,7 +336,7 @@ const addModerator = async (req, res) => {
             targetUser = await Identity.findOne({ username: username.toLowerCase().trim() });
         }
 
-        if (!targetUser) {
+        if (!targetUser || targetUser.status === "DELETED") {
             return res.status(404).json({ success: false, message: "Target user not found" });
         }
 
@@ -593,12 +602,15 @@ const getCommunityMembers = async (req, res) => {
         const { q, role, page = 1, limit = 30 } = req.query;
 
         // Build list of all member IDs
+        const deletedUsers = await Identity.find({ status: "DELETED" }).select("_id");
+        const deletedUserIds = new Set(deletedUsers.map((u) => u._id.toString()));
+
         const ownerId = community.owner?.toString();
         const modIds = new Set((community.moderators || []).map((m) => m.toString()));
         const memberIds = new Set((community.members || []).map((m) => m.toString()));
-        if (ownerId) memberIds.add(ownerId);
+        if (ownerId && !deletedUserIds.has(ownerId)) memberIds.add(ownerId);
 
-        const allUserIds = Array.from(memberIds);
+        const allUserIds = Array.from(memberIds).filter((id) => !deletedUserIds.has(id.toString()));
 
         const profileFilter = { userId: { $in: allUserIds } };
         if (q && q.trim()) {

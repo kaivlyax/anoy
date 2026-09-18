@@ -13,6 +13,7 @@ const Message = require("../models/Message");
 
 describe("Real-Time Messaging & Conversations Suite", () => {
     let server;
+    let ioServer;
     let port;
     let userA, userB, userC;
     let tokenA, tokenB, tokenC;
@@ -28,7 +29,7 @@ describe("Real-Time Messaging & Conversations Suite", () => {
         }
 
         server = http.createServer(app);
-        initSocket(server);
+        ioServer = initSocket(server);
 
         await new Promise((resolve) => {
             server.listen(0, () => {
@@ -81,6 +82,9 @@ describe("Real-Time Messaging & Conversations Suite", () => {
         await Profile.deleteMany({ username: { $in: ["usera", "userb", "userc"] } });
         await Conversation.deleteMany({});
         await Message.deleteMany({});
+        if (ioServer) {
+            ioServer.close();
+        }
         if (server) {
             await new Promise((resolve) => server.close(resolve));
         }

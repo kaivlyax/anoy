@@ -1,4 +1,5 @@
 const Profile = require("../models/Profile");
+const Identity = require("../models/Identity");
 const Community = require("../models/Community");
 const Post = require("../models/Post");
 const Like = require("../models/Like");
@@ -21,8 +22,12 @@ const searchUsers = async (req, res) => {
         const searchTerm = query.trim();
         const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
+        const deletedUsers = await Identity.find({ status: "DELETED" }).select("_id");
+        const deletedUserIds = deletedUsers.map((u) => u._id);
+
         const users = await Profile.find({
             privacy: "PUBLIC",
+            userId: { $nin: deletedUserIds },
             $or: [
                 { username: { $regex: searchTerm, $options: "i" } },
                 { displayName: { $regex: searchTerm, $options: "i" } },
@@ -218,10 +223,14 @@ const unifiedSearch = async (req, res) => {
             return searchPosts(req, res);
         }
 
+        const deletedUsers = await Identity.find({ status: "DELETED" }).select("_id");
+        const deletedUserIds = deletedUsers.map((u) => u._id);
+
         // Parallel execution for 'all'
         const [usersRes, commsRes, postsRes] = await Promise.all([
             Profile.find({
                 privacy: "PUBLIC",
+                userId: { $nin: deletedUserIds },
                 $or: [
                     { username: { $regex: searchTerm, $options: "i" } },
                     { displayName: { $regex: searchTerm, $options: "i" } }

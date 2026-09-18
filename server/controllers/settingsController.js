@@ -5,6 +5,10 @@ const Profile = require("../models/Profile");
 const Block = require("../models/Block");
 const Follow = require("../models/Follow");
 const Post = require("../models/Post");
+const Community = require("../models/Community");
+const Comment = require("../models/Comment");
+const Like = require("../models/Like");
+const Notification = require("../models/Notification");
 
 /**
  * GET /api/v1/settings
@@ -448,8 +452,21 @@ const deleteAccount = async (req, res) => {
         user.tokenVersion = (user.tokenVersion || 0) + 1;
         await user.save();
 
+        // Remove Profile document so deleted accounts cannot be discovered
+        await Profile.deleteMany({ userId: user._id });
+
         // Soft-delete user posts
         await Post.updateMany({ author: user._id }, { isDeleted: true });
+
+        // Soft-delete user comments
+        await Comment.updateMany({ author: user._id }, { isDeleted: true });
+
+        // Remove user likes
+        await Like.deleteMany({ user: user._id });
+
+        // Remove user from community memberships and moderators
+        await Community.updateMany({ members: user._id }, { $pull: { members: user._id } });
+        await Community.updateMany({ moderators: user._id }, { $pull: { moderators: user._id } });
 
         // Clean up follow relationships
         await Follow.deleteMany({
@@ -459,6 +476,11 @@ const deleteAccount = async (req, res) => {
         // Clean up blocks
         await Block.deleteMany({
             $or: [{ blocker: user._id }, { blocked: user._id }]
+        });
+
+        // Clean up notifications
+        await Notification.deleteMany({
+            $or: [{ recipient: user._id }, { sender: user._id }]
         });
 
         return res.status(200).json({
