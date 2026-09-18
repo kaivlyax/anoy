@@ -1,4 +1,5 @@
 const cloudinaryConfig = require("../config/cloudinary");
+const { getUploadLimits } = require("../middleware/premiumMiddleware");
 
 const uploadImage = async (req, res) => {
     try {
@@ -6,6 +7,16 @@ const uploadImage = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: "No media file provided. Please attach an image or video."
+            });
+        }
+
+        // Enforce user tier upload limits (5MB for Free, 25MB for Pro)
+        const fileSize = req.file.size || (req.file.buffer ? req.file.buffer.length : 0);
+        const limits = getUploadLimits(Boolean(req.isPro));
+        if (fileSize > limits.maxBytes) {
+            return res.status(400).json({
+                success: false,
+                message: `File size exceeds your ${limits.maxLabel} upload limit.${!req.isPro ? " Upgrade to ANOY Pro for 25MB HD uploads." : ""}`
             });
         }
 

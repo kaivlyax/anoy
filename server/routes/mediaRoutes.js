@@ -3,6 +3,7 @@ const router = express.Router();
 const { upload } = require("../config/cloudinary");
 const { uploadImage } = require("../controllers/mediaController");
 const protect = require("../middleware/authMiddleware");
+const { checkIsPro } = require("../middleware/premiumMiddleware");
 
 // Custom wrapper to catch Multer errors cleanly and support multiple field names ("image", "file", "media")
 const handleUpload = (req, res, next) => {
@@ -12,7 +13,7 @@ const handleUpload = (req, res, next) => {
             if (err.code === "LIMIT_FILE_SIZE") {
                 return res.status(400).json({
                     success: false,
-                    message: "File size exceeds the 25MB limit."
+                    message: "File size exceeds the maximum allowed upload limit."
                 });
             }
             return res.status(400).json({
@@ -27,6 +28,6 @@ const handleUpload = (req, res, next) => {
     });
 };
 
-router.post("/upload", protect, handleUpload, uploadImage);
+router.post("/upload", protect, checkIsPro, handleUpload, uploadImage);
 
 module.exports = router;

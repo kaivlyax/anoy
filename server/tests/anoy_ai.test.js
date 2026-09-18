@@ -497,6 +497,36 @@ describe("ANOY AI Assistant Test Suite", () => {
             await Conversation.findByIdAndDelete(dmConv._id);
             await Message.deleteMany({ conversation: dmConv._id });
         });
+
+        test("Rate Limiting: Exceeding 10 AI requests within a 60s window returns 429", async () => {
+            const aiRateLimiter = require("../middleware/aiRateLimiter");
+            const testUserId = new mongoose.Types.ObjectId();
+            const mockReq = { user: { _id: testUserId }, ip: "127.0.0.1" };
+
+            // Make 10 requests successfully
+            for (let i = 0; i < 10; i++) {
+                let nextCalled = false;
+                aiRateLimiter(mockReq, {}, () => {
+                    nextCalled = true;
+                });
+                expect(nextCalled).toBe(true);
+            }
+
+            // 11th request receives 429
+            const mockRes = {
+                status: jest.fn().mockReturnThis(),
+                json: jest.fn()
+            };
+            aiRateLimiter(mockReq, mockRes, () => {});
+
+            expect(mockRes.status).toHaveBeenCalledWith(429);
+            expect(mockRes.json).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    success: false,
+                    message: expect.stringContaining("Too many AI requests")
+                })
+            );
+        });
     });
 });
 

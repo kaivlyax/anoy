@@ -186,6 +186,36 @@ describe("Real-Time Messaging & Conversations Suite", () => {
             expect(res.body.success).toBe(true);
             expect(res.body.count).toBe(1);
         });
+
+        test("POST /api/v1/conversations/:id/messages - Rejects message when recipient sets messagePrivacy to NOBODY", async () => {
+            await Profile.updateOne({ userId: userB._id }, { messagePrivacy: "NOBODY" });
+
+            const res = await request(app)
+                .post(`/api/v1/conversations/${conversationId}/messages`)
+                .set("Authorization", `Bearer ${tokenA}`)
+                .send({ content: "Should fail privacy NOBODY" });
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toMatch(/does not accept direct messages/i);
+
+            await Profile.updateOne({ userId: userB._id }, { messagePrivacy: "EVERYONE" });
+        });
+
+        test("POST /api/v1/conversations/:id/messages - Rejects message when recipient sets FOLLOWERS_ONLY and sender is not follower", async () => {
+            await Profile.updateOne({ userId: userB._id }, { messagePrivacy: "FOLLOWERS_ONLY" });
+
+            const res = await request(app)
+                .post(`/api/v1/conversations/${conversationId}/messages`)
+                .set("Authorization", `Bearer ${tokenA}`)
+                .send({ content: "Should fail privacy FOLLOWERS_ONLY" });
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toMatch(/only accepts direct messages from their followers/i);
+
+            await Profile.updateOne({ userId: userB._id }, { messagePrivacy: "EVERYONE" });
+        });
     });
 
     describe("Socket.IO - Real-Time Events", () => {

@@ -449,25 +449,36 @@ const joinMeetingRoom = async (req, res) => {
         const hostTierLimit = isHostPro ? 15 : 5;
         const effectiveMax = Math.min(room.maxParticipants || hostTierLimit, hostTierLimit);
 
-        // Check room capacity
+        // Atomic check & join room capacity to prevent race conditions
         const isAlreadyIn = room.activeParticipants.some((p) => p.user.equals(req.user._id));
-        if (!isAlreadyIn && room.activeParticipants.length >= effectiveMax) {
-            return res.status(400).json({
-                success: false,
-                message: `Meeting room is full (Max ${effectiveMax} participants for ${isHostPro ? "ANOY Pro" : "Free"} host)`
-            });
-        }
-
-        // Add to activeParticipants if not already present
         if (!isAlreadyIn) {
-            room.activeParticipants.push({
-                user: req.user._id,
-                joinedAt: new Date(),
-                isMuted: false,
-                isVideoOff: false,
-                isScreenSharing: false
-            });
-            await room.save();
+            const updatedRoom = await MeetingRoom.findOneAndUpdate(
+                {
+                    _id: room._id,
+                    isActive: true,
+                    "activeParticipants.user": { $ne: req.user._id },
+                    $expr: { $lt: [{ $size: "$activeParticipants" }, effectiveMax] }
+                },
+                {
+                    $push: {
+                        activeParticipants: {
+                            user: req.user._id,
+                            joinedAt: new Date(),
+                            isMuted: false,
+                            isVideoOff: false,
+                            isScreenSharing: false
+                        }
+                    }
+                },
+                { returnDocument: "after" }
+            );
+
+            if (!updatedRoom) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Meeting room is full (Max ${effectiveMax} participants for ${isHostPro ? "ANOY Pro" : "Free"} host)`
+                });
+            }
         }
 
         return res.status(200).json({

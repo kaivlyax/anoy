@@ -101,4 +101,69 @@ describe("Media Upload Controller Unit Tests", () => {
             })
         );
     });
+
+    test("4. uploadImage: Rejects Free user when file exceeds 5MB limit", async () => {
+        const sixMBBuffer = Buffer.alloc(6 * 1024 * 1024);
+        const req = {
+            isPro: false,
+            file: {
+                buffer: sixMBBuffer,
+                size: sixMBBuffer.length,
+                originalname: "large.png",
+                mimetype: "image/png"
+            }
+        };
+        const res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn()
+        };
+
+        await uploadImage(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(
+            expect.objectContaining({
+                success: false,
+                message: expect.stringContaining("5MB")
+            })
+        );
+    });
+
+    test("5. uploadImage: Allows Pro user uploading file above 5MB up to 25MB", async () => {
+        jest.spyOn(cloudinary, "uploadMedia").mockResolvedValue({
+            url: "https://res.cloudinary.com/demo/image/upload/pro_hd.png",
+            publicId: "pro_hd",
+            resourceType: "IMAGE",
+            width: 3840,
+            height: 2160,
+            format: "png",
+            size: 8 * 1024 * 1024,
+            originalName: "pro_hd.png"
+        });
+
+        const eightMBBuffer = Buffer.alloc(8 * 1024 * 1024);
+        const req = {
+            isPro: true,
+            file: {
+                buffer: eightMBBuffer,
+                size: eightMBBuffer.length,
+                originalname: "pro_hd.png",
+                mimetype: "image/png"
+            }
+        };
+        const res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn()
+        };
+
+        await uploadImage(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(res.json).toHaveBeenCalledWith(
+            expect.objectContaining({
+                success: true,
+                message: "Media uploaded successfully"
+            })
+        );
+    });
 });

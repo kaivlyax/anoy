@@ -20,7 +20,7 @@ const ANOY_KNOWLEDGE = {
     anoyPro: `ANOY Pro is a premium membership tier providing exclusive personalization and perks.
 - Perks: Exclusive Pro badge, glowing avatar frames, royal/neon profile themes, animated reaction packs, 25MB HD media uploads (vs 5MB standard), and community boosting.
 - Pricing in INR: Monthly (₹99 / month), Annual (₹799 / year - Save 33%), Lifetime VIP (₹2,499 one-time).
-- Checkout: Pro purchasing is currently coming soon while the Razorpay application is under review.
+- Checkout: Paid Pro subscriptions with Razorpay checkout are currently Coming Soon while payment gateway review is being finalized. Free accounts currently have full access to all standard ANOY platform features, posts, communities, and themes.`,
     profiles: `Profiles showcase student identities, bio, skills, and academic interests.
 - Privacy: Public (visible to everyone on ANOY) or Private (requires follow request approval).
 - Customization: Avatars, cover banners, avatar frames, and custom profile themes.`,

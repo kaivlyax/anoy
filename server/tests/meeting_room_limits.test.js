@@ -174,4 +174,37 @@ describe("Meeting Room Participant Limits (Free: 5 vs Pro: 15) & Ban Enforcement
         expect(res.body.success).toBe(false);
         expect(res.body.message).toMatch(/banned/i);
     });
+
+    it("Simultaneous joins cannot race or bypass the 5-participant limit", async () => {
+        const freeRoom = await MeetingRoom.findOne({ name: "Free Host Study Lounge" });
+        expect(freeRoom).not.toBeNull();
+
+        // Set room to have 4 active participants (1 slot left)
+        freeRoom.activeParticipants = [
+            { user: freeHostUser._id, socketId: "s0", joinedAt: new Date() },
+            { user: participantUser1._id, socketId: "s1", joinedAt: new Date() },
+            { user: participantUser2._id, socketId: "s2", joinedAt: new Date() },
+            { user: participantUser3._id, socketId: "s3", joinedAt: new Date() }
+        ];
+        await freeRoom.save();
+
+        // Fire 2 concurrent join requests simultaneously for participant 5 and extra participant
+        const [res5, resExtra] = await Promise.all([
+            request(app)
+                .post(`/api/v1/meeting-rooms/${freeRoom._id}/join`)
+                .set("Authorization", `Bearer ${participantToken5}`)
+                .send({}),
+            request(app)
+                .post(`/api/v1/meeting-rooms/${freeRoom._id}/join`)
+                .set("Authorization", `Bearer ${extraToken}`)
+                .send({})
+        ]);
+
+        const statuses = [res5.status, resExtra.status].sort();
+        // Exactly one should succeed (200) and one should fail (400)
+        expect(statuses).toEqual([200, 400]);
+
+        const finalRoom = await MeetingRoom.findById(freeRoom._id);
+        expect(finalRoom.activeParticipants.length).toBe(5);
+    });
 });

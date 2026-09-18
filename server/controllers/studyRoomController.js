@@ -331,24 +331,36 @@ const joinStudyRoom = async (req, res) => {
             }
         }
 
-        // Check max participant capacity
+        // Check & enforce max participant capacity atomically
         const isAlreadyIn = room.activeParticipants.some((p) => p.user.equals(req.user._id));
-        if (!isAlreadyIn && room.activeParticipants.length >= room.maxParticipants) {
-            return res.status(400).json({
-                success: false,
-                message: "Study room has reached maximum capacity."
-            });
-        }
-
         if (!isAlreadyIn) {
-            room.activeParticipants.push({
-                user: req.user._id,
-                joinedAt: new Date(),
-                isMuted: false,
-                isVideoOff: false,
-                isScreenSharing: false
-            });
-            await room.save();
+            const updatedRoom = await StudyRoom.findOneAndUpdate(
+                {
+                    _id: room._id,
+                    isActive: true,
+                    "activeParticipants.user": { $ne: req.user._id },
+                    $expr: { $lt: [{ $size: "$activeParticipants" }, "$maxParticipants"] }
+                },
+                {
+                    $push: {
+                        activeParticipants: {
+                            user: req.user._id,
+                            joinedAt: new Date(),
+                            isMuted: false,
+                            isVideoOff: false,
+                            isScreenSharing: false
+                        }
+                    }
+                },
+                { returnDocument: "after" }
+            );
+
+            if (!updatedRoom) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Study room has reached maximum capacity."
+                });
+            }
         }
 
         return res.status(200).json({

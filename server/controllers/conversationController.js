@@ -369,22 +369,54 @@ const sendMessage = async (req, res) => {
             });
         }
 
-        // Check if other participant is blocked
+        // Check if other participant is blocked, deleted, or privacy restricts messages
         const otherParticipantIds = conversation.participants.filter(
             (p) => !p.equals(req.user._id)
         );
-        const hasBlock = await Block.findOne({
-            $or: [
-                { blocker: req.user._id, blocked: { $in: otherParticipantIds } },
-                { blocker: { $in: otherParticipantIds }, blocked: req.user._id }
-            ]
-        });
+        const otherParticipantId = otherParticipantIds[0];
 
-        if (hasBlock) {
-            return res.status(403).json({
-                success: false,
-                message: "Unable to send message. This user is blocked."
+        if (otherParticipantId) {
+            const recipient = await Identity.findById(otherParticipantId);
+            if (!recipient || recipient.status === "DELETED") {
+                return res.status(404).json({
+                    success: false,
+                    message: "Recipient user not found or has deleted their account."
+                });
+            }
+
+            const hasBlock = await Block.findOne({
+                $or: [
+                    { blocker: req.user._id, blocked: otherParticipantId },
+                    { blocker: otherParticipantId, blocked: req.user._id }
+                ]
             });
+
+            if (hasBlock) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Unable to send message. This user is blocked."
+                });
+            }
+
+            const recipientProfile = await Profile.findOne({ userId: otherParticipantId });
+            if (recipientProfile?.messagePrivacy === "NOBODY") {
+                return res.status(403).json({
+                    success: false,
+                    message: "This user does not accept direct messages"
+                });
+            } else if (recipientProfile?.messagePrivacy === "FOLLOWERS_ONLY") {
+                const isFollower = await Follow.findOne({
+                    follower: req.user._id,
+                    following: otherParticipantId,
+                    status: "ACCEPTED"
+                });
+                if (!isFollower) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "This user only accepts direct messages from their followers"
+                    });
+                }
+            }
         }
 
         const message = new Message({
