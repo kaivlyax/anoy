@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { postApi } from "../services/api";
+import TajWelcomeHero from "../components/TajWelcomeHero";
 import PostComposer from "../components/PostComposer";
 import PostCard from "../components/PostCard";
 import { SparklesIcon, CompassIcon, LoaderIcon, AlertCircleIcon } from "../components/Icons";
@@ -102,11 +103,16 @@ function Dashboard() {
 
   return (
     <div className="main-feed-column">
+      {/* Taj Mahal Welcome Hero Banner (Reference 2) */}
+      <TajWelcomeHero />
+
       {/* Sticky Header with Feed Tabs */}
       <header className="sticky-header">
         <h2 className="sticky-header-title">Home</h2>
-        <div className="feed-tabs">
+        <div className="feed-tabs" role="tablist">
           <button
+            role="tab"
+            aria-selected={activeTab === "for-you"}
             className={`feed-tab ${activeTab === "for-you" ? "active" : ""}`}
             onClick={() => handleTabChange("for-you")}
             aria-label="For You Personalized Feed"
@@ -114,6 +120,8 @@ function Dashboard() {
             For You
           </button>
           <button
+            role="tab"
+            aria-selected={activeTab === "explore"}
             className={`feed-tab ${activeTab === "explore" ? "active" : ""}`}
             onClick={() => handleTabChange("explore")}
             aria-label="Explore Global Feed"
@@ -127,11 +135,11 @@ function Dashboard() {
       <PostComposer onPostCreated={handlePostCreated} />
 
       {/* Main Feed Stream */}
-      <main>
+      <main className="feed-stream-container">
         {loading ? (
           <div>
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="skeleton-post-card">
+              <div key={n} className="skeleton-post-card glass-panel">
                 <div className="skeleton-box skeleton-avatar" />
                 <div className="skeleton-lines">
                   <div
@@ -148,14 +156,14 @@ function Dashboard() {
                   />
                   <div
                     className="skeleton-box"
-                    style={{ width: "100%", height: 140, borderRadius: 8 }}
+                    style={{ width: "100%", height: 120, borderRadius: 8 }}
                   />
                 </div>
               </div>
             ))}
           </div>
         ) : error ? (
-          <div className="empty-feed">
+          <div className="empty-feed glass-panel">
             <div className="empty-feed-icon" style={{ color: "#ef4444" }}>
               <AlertCircleIcon size={30} />
             </div>
@@ -170,7 +178,7 @@ function Dashboard() {
             </button>
           </div>
         ) : posts.length === 0 ? (
-          <div className="empty-feed">
+          <div className="empty-feed glass-panel">
             <div className="empty-feed-icon">
               {activeTab === "for-you" ? (
                 <SparklesIcon size={30} />
@@ -185,7 +193,7 @@ function Dashboard() {
             </h3>
             <p className="empty-feed-subtitle">
               {activeTab === "for-you"
-                ? "Follow other users or create your first post to populate your home feed!"
+                ? "Follow students or share your first post to populate your feed!"
                 : "Be the first person to share a post with the network."}
             </p>
             {activeTab === "for-you" && (
@@ -199,7 +207,7 @@ function Dashboard() {
             )}
           </div>
         ) : (
-          <div>
+          <div className="posts-list">
             {posts.map((post) => (
               <PostCard
                 key={post._id}
@@ -211,7 +219,7 @@ function Dashboard() {
             {/* Pagination Load More */}
             {page < totalPages && (
               <button
-                className="load-more-btn"
+                className="load-more-btn glass-panel"
                 onClick={handleLoadMore}
                 disabled={loadingMore}
               >

@@ -20,7 +20,7 @@ describe("Meeting Rooms & Unified Search Inside Communities Suite", () => {
             process.env.JWT_SECRET = "ff2add0f28c6c8da2aaf72cc2a9728f3bb0f2876eba5a3379946a1b8fd7717ef0bf6fa58872dfd2bc89e78211257d09a58e3206fe73abd93aff7325fac3b7f46";
         }
 
-        if (mongoose.connection.readyState === 0) {
+        if (mongoose.connection.readyState !== 1) {
             await mongoose.connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/anoy");
         }
 
@@ -79,15 +79,14 @@ describe("Meeting Rooms & Unified Search Inside Communities Suite", () => {
             members: [ownerUser._id, memberUser._id],
             isPrivate: true
         });
-    });
+    }, 30000);
 
     afterAll(async () => {
         await Identity.deleteMany({ email: { $in: ["mroom_owner@test.com", "mroom_member@test.com", "mroom_outsider@test.com"] } });
         await Profile.deleteMany({ username: { $in: ["mroom_owner", "mroom_member", "mroom_outsider"] } });
         await Community.deleteMany({ slug: { $in: ["algo-hackers", "secret-research"] } });
         await MeetingRoom.deleteMany({ name: { $in: ["DSA Study Session", "Confidential Lab"] } });
-        await mongoose.connection.close();
-    });
+    }, 30000);
 
     it("POST /api/v1/communities/:id/meeting-rooms - creates a meeting room in public community", async () => {
         const res = await request(app)

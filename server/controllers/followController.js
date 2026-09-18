@@ -1,6 +1,7 @@
 const Follow = require("../models/Follow");
 const Profile = require("../models/Profile");
 const Notification = require("../models/Notification");
+const Block = require("../models/Block");
 
 // =====================================================
 // FOLLOW USER
@@ -53,6 +54,22 @@ const followUser = async (req, res) => {
 
         const targetUserId =
             targetProfile.userId;
+
+
+        // Check if either user has blocked the other
+        const isBlocked = await Block.findOne({
+            $or: [
+                { blocker: req.user._id, blocked: targetUserId },
+                { blocker: targetUserId, blocked: req.user._id }
+            ]
+        });
+
+        if (isBlocked) {
+            return res.status(403).json({
+                success: false,
+                message: "Unable to follow this user"
+            });
+        }
 
 
         // Check whether relationship already exists

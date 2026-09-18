@@ -66,6 +66,41 @@ const profileSchema = new mongoose.Schema(
             default: "PUBLIC"
         },
 
+        // Direct Messaging Privacy
+        messagePrivacy: {
+            type: String,
+            enum: [
+                "EVERYONE",
+                "FOLLOWERS_ONLY",
+                "NOBODY"
+            ],
+            default: "EVERYONE"
+        },
+
+        // Notification Preferences
+        notificationPreferences: {
+            likes: {
+                type: Boolean,
+                default: true
+            },
+            comments: {
+                type: Boolean,
+                default: true
+            },
+            follows: {
+                type: Boolean,
+                default: true
+            },
+            messages: {
+                type: Boolean,
+                default: true
+            },
+            communities: {
+                type: Boolean,
+                default: true
+            }
+        },
+
         // Premium / Pro System
         isPro: {
             type: Boolean,

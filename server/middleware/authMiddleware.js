@@ -98,7 +98,17 @@ const protect = async (req, res, next) => {
         }
 
 
-       
+        // Check tokenVersion for session invalidation / logout all devices
+        const userTokenVersion = user.tokenVersion || 0;
+        if (
+            decoded.tokenVersion !== undefined &&
+            decoded.tokenVersion !== userTokenVersion
+        ) {
+            return res.status(401).json({
+                success: false,
+                message: "Session has been invalidated. Please log in again."
+            });
+        }
 
         req.user = user;
 

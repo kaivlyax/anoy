@@ -95,21 +95,29 @@ const getCommunityMeetingRooms = async (req, res) => {
         const enrichedRooms = rooms.map((room) => {
             const rObj = room.toObject();
             const creatorProf = rObj.createdBy ? profileMap.get(rObj.createdBy._id.toString()) : null;
+            const isCreatorPro = Boolean(
+                creatorProf?.isPro && (!creatorProf?.proExpiresAt || new Date(creatorProf.proExpiresAt) > new Date())
+            );
+            const hostTierLimit = isCreatorPro ? 15 : 5;
 
             rObj.name = rObj.name || rObj.title;
             rObj.title = rObj.name;
+            rObj.isHostPro = isCreatorPro;
+            rObj.hostTierLimit = hostTierLimit;
+            rObj.maxParticipants = Math.min(rObj.maxParticipants || hostTierLimit, hostTierLimit);
             rObj.createdBy = rObj.createdBy
                 ? {
                       ...rObj.createdBy,
                       displayName: creatorProf?.displayName || rObj.createdBy.username,
                       avatar: creatorProf?.avatar || "",
-                      isPro: creatorProf?.isPro || false
+                      isPro: isCreatorPro
                   }
                 : null;
             rObj.creator = rObj.createdBy;
 
             rObj.activeParticipants = (rObj.activeParticipants || []).map((p) => {
                 const uProf = p.user ? profileMap.get(p.user._id.toString()) : null;
+                const isUPro = Boolean(uProf?.isPro && (!uProf?.proExpiresAt || new Date(uProf.proExpiresAt) > new Date()));
                 return {
                     ...p,
                     user: p.user
@@ -117,7 +125,7 @@ const getCommunityMeetingRooms = async (req, res) => {
                               ...p.user,
                               displayName: uProf?.displayName || p.user.username,
                               avatar: uProf?.avatar || "",
-                              isPro: uProf?.isPro || false,
+                              isPro: isUPro,
                               avatarDecoration: uProf?.avatarDecoration || ""
                           }
                         : null
@@ -189,13 +197,22 @@ const createMeetingRoom = async (req, res) => {
             });
         }
 
+        // Check if user is banned from community
+        const isBanned = community.bannedUsers?.some((b) => (b.user?._id ? b.user._id.equals(req.user._id) : b.user?.equals?.(req.user._id)));
+        if (isBanned) {
+            return res.status(403).json({
+                success: false,
+                message: "You are banned from this community"
+            });
+        }
+
         const {
             name,
             title,
             description = "",
             isPrivate = false,
             passcode = "",
-            maxParticipants = 10
+            maxParticipants
         } = req.body;
 
         const roomName = (name || title || "").trim();
@@ -206,7 +223,14 @@ const createMeetingRoom = async (req, res) => {
             });
         }
 
-        const parsedMax = Math.min(Math.max(parseInt(maxParticipants, 10) || 10, 2), 30);
+        // Enforce Free (5) vs Pro (15) participant limits
+        const hostProfile = await Profile.findOne({ userId: req.user._id });
+        const isHostPro = Boolean(
+            hostProfile?.isPro && (!hostProfile?.proExpiresAt || new Date(hostProfile.proExpiresAt) > new Date())
+        );
+        const hostTierLimit = isHostPro ? 15 : 5;
+        const requestedMax = parseInt(maxParticipants, 10);
+        const parsedMax = Math.min(Math.max(isNaN(requestedMax) ? hostTierLimit : requestedMax, 2), hostTierLimit);
 
         const room = await MeetingRoom.create({
             name: roomName,
@@ -236,6 +260,8 @@ const createMeetingRoom = async (req, res) => {
 
         const roomObj = populatedRoom.toObject();
         roomObj.hasPasscode = Boolean(room.passcode);
+        roomObj.isHostPro = isHostPro;
+        roomObj.hostTierLimit = hostTierLimit;
         delete roomObj.passcode;
 
         return res.status(201).json({
@@ -302,15 +328,22 @@ const getMeetingRoom = async (req, res) => {
 
         const rObj = room.toObject();
         const creatorProf = rObj.createdBy ? profileMap.get(rObj.createdBy._id.toString()) : null;
+        const isCreatorPro = Boolean(
+            creatorProf?.isPro && (!creatorProf?.proExpiresAt || new Date(creatorProf.proExpiresAt) > new Date())
+        );
+        const hostTierLimit = isCreatorPro ? 15 : 5;
 
         rObj.name = rObj.name || rObj.title;
         rObj.title = rObj.name;
+        rObj.isHostPro = isCreatorPro;
+        rObj.hostTierLimit = hostTierLimit;
+        rObj.maxParticipants = Math.min(rObj.maxParticipants || hostTierLimit, hostTierLimit);
         rObj.createdBy = rObj.createdBy
             ? {
                   ...rObj.createdBy,
                   displayName: creatorProf?.displayName || rObj.createdBy.username,
                   avatar: creatorProf?.avatar || "",
-                  isPro: creatorProf?.isPro || false,
+                  isPro: isCreatorPro,
                   avatarDecoration: creatorProf?.avatarDecoration || ""
               }
             : null;
@@ -318,6 +351,7 @@ const getMeetingRoom = async (req, res) => {
 
         rObj.activeParticipants = (rObj.activeParticipants || []).map((p) => {
             const uProf = p.user ? profileMap.get(p.user._id.toString()) : null;
+            const isUPro = Boolean(uProf?.isPro && (!uProf?.proExpiresAt || new Date(uProf.proExpiresAt) > new Date()));
             return {
                 ...p,
                 user: p.user
@@ -325,7 +359,7 @@ const getMeetingRoom = async (req, res) => {
                           ...p.user,
                           displayName: uProf?.displayName || p.user.username,
                           avatar: uProf?.avatar || "",
-                          isPro: uProf?.isPro || false,
+                          isPro: isUPro,
                           avatarDecoration: uProf?.avatarDecoration || ""
                       }
                     : null
@@ -373,6 +407,19 @@ const joinMeetingRoom = async (req, res) => {
             });
         }
 
+        // Check if user is banned from the community
+        if (room.community?.bannedUsers) {
+            const isBanned = room.community.bannedUsers.some((b) =>
+                b.user?._id ? b.user._id.equals(req.user._id) : b.user?.equals?.(req.user._id)
+            );
+            if (isBanned) {
+                return res.status(403).json({
+                    success: false,
+                    message: "You are banned from this community"
+                });
+            }
+        }
+
         // Community membership verification for private communities
         if (room.community && room.community.isPrivate) {
             const isMember = isAuthorizedCommunityMember(room.community, req.user._id);
@@ -394,12 +441,20 @@ const joinMeetingRoom = async (req, res) => {
             }
         }
 
+        // Enforce Host Tier Limit (5 Free vs 15 Pro)
+        const hostProfile = await Profile.findOne({ userId: room.createdBy || room.creator });
+        const isHostPro = Boolean(
+            hostProfile?.isPro && (!hostProfile?.proExpiresAt || new Date(hostProfile.proExpiresAt) > new Date())
+        );
+        const hostTierLimit = isHostPro ? 15 : 5;
+        const effectiveMax = Math.min(room.maxParticipants || hostTierLimit, hostTierLimit);
+
         // Check room capacity
         const isAlreadyIn = room.activeParticipants.some((p) => p.user.equals(req.user._id));
-        if (!isAlreadyIn && room.activeParticipants.length >= room.maxParticipants) {
+        if (!isAlreadyIn && room.activeParticipants.length >= effectiveMax) {
             return res.status(400).json({
                 success: false,
-                message: `Meeting room is full (Max ${room.maxParticipants} participants)`
+                message: `Meeting room is full (Max ${effectiveMax} participants for ${isHostPro ? "ANOY Pro" : "Free"} host)`
             });
         }
 

@@ -615,6 +615,12 @@ const initSocket = (httpServer) => {
                     return;
                 }
 
+                // Check if user is banned from the community
+                if (room.community?.bannedUsers?.some((b) => (b.user?._id ? b.user._id.equals(socket.user._id) : b.user?.equals?.(socket.user._id)))) {
+                    if (callback) callback({ success: false, message: "You are banned from this community" });
+                    return;
+                }
+
                 if (room.isPrivate && room.passcode && passcode !== room.passcode) {
                     if (callback) callback({ success: false, message: "Incorrect passcode" });
                     return;
@@ -627,6 +633,24 @@ const initSocket = (httpServer) => {
                     }
                 }
 
+                // Enforce Host Tier Limit (5 Free vs 15 Pro)
+                const hostProfile = await Profile.findOne({ userId: room.createdBy || room.creator });
+                const isHostPro = Boolean(
+                    hostProfile?.isPro && (!hostProfile?.proExpiresAt || new Date(hostProfile.proExpiresAt) > new Date())
+                );
+                const hostTierLimit = isHostPro ? 15 : 5;
+                const effectiveMax = Math.min(room.maxParticipants || hostTierLimit, hostTierLimit);
+
+                // Check capacity
+                const existingIdx = room.activeParticipants.findIndex((p) => p.user.equals(socket.user._id));
+                if (existingIdx < 0 && room.activeParticipants.length >= effectiveMax) {
+                    if (callback) callback({
+                        success: false,
+                        message: `Meeting room is full (Max ${effectiveMax} participants for ${isHostPro ? "ANOY Pro" : "Free"} host)`
+                    });
+                    return;
+                }
+
                 const roomKey = `meeting_room:${roomId}`;
                 const legacyKey = `study_room:${roomId}`;
                 socket.join(roomKey);
@@ -634,7 +658,6 @@ const initSocket = (httpServer) => {
                 socketMeetingRooms.get(socket.id)?.add(roomId);
 
                 // Update participant in DB
-                const existingIdx = room.activeParticipants.findIndex((p) => p.user.equals(socket.user._id));
                 if (existingIdx >= 0) {
                     room.activeParticipants[existingIdx].socketId = socket.id;
                 } else {

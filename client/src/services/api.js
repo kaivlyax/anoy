@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:5001/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api/v1";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -44,7 +44,28 @@ export const authApi = {
   login: (credentials) => api.post("/auth/login", credentials),
   register: (data) => api.post("/auth/register", data),
   verifyEmail: (data) => api.post("/auth/verify-email", data),
-  resendOtp: (data) => api.post("/auth/resend-otp", data)
+  resendOtp: (data) => api.post("/auth/resend-otp", data),
+  forgotPassword: (data) => api.post("/auth/forgot-password", data),
+  resetPassword: (data) => api.post("/auth/reset-password", data)
+};
+
+export const settingsApi = {
+  getSettings: () => api.get("/settings"),
+  changePassword: (data) => api.post("/settings/change-password", data),
+  updatePrivacy: (data) => api.put("/settings/privacy", data),
+  updateNotifications: (data) => api.put("/settings/notifications", data),
+  getBlockedUsers: () => api.get("/settings/blocked"),
+  blockUser: (username) => api.post(`/settings/block/${encodeURIComponent(username)}`),
+  unblockUser: (username) => api.post(`/settings/unblock/${encodeURIComponent(username)}`),
+  logoutAllDevices: () => api.post("/settings/logout-all"),
+  deleteAccount: (data) => api.post("/settings/delete-account", data)
+};
+
+export const aiApi = {
+  chat: (data) => api.post("/ai/chat", data),
+  getConversations: () => api.get("/ai/conversations"),
+  getMessages: (conversationId) => api.get(`/ai/conversations/${conversationId}/messages`),
+  deleteConversation: (conversationId) => api.delete(`/ai/conversations/${conversationId}`)
 };
 
 export const postApi = {
@@ -55,7 +76,9 @@ export const postApi = {
   getPostById: (id) => api.get(`/posts/${id}`),
   createPost: (data) => api.post("/posts", data),
   updatePost: (id, data) => api.patch(`/posts/${id}`, data),
-  deletePost: (id) => api.delete(`/posts/${id}`)
+  deletePost: (id) => api.delete(`/posts/${id}`),
+  getTrendingTopics: (limit = 5, days = 30) =>
+    api.get(`/posts/trending?limit=${limit}&days=${days}`)
 };
 
 export const likeApi = {

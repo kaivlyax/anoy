@@ -96,6 +96,11 @@ const identitySchema = new mongoose.Schema(
 
         lastLogin: {
             type: Date
+        },
+
+        tokenVersion: {
+            type: Number,
+            default: 0
         }
 
     },

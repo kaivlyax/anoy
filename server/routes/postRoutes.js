@@ -8,7 +8,8 @@ const {
     getPostById,
     updatePost,
     deletePost,
-    getPersonalizedFeed
+    getPersonalizedFeed,
+    getTrendingTopics
 } = require("../controllers/postController");
 
 
@@ -43,6 +44,12 @@ router.get(
     getPosts
 );
 
+// GET TRENDING TOPICS
+router.get(
+    "/trending",
+    protect,
+    getTrendingTopics
+);
 
 router.get(
     "/feed",

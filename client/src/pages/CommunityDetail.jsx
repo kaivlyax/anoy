@@ -69,13 +69,18 @@ export default function CommunityDetail() {
   const typingTimerRef = useRef(null);
 
   // Meeting Rooms State
+  const isProUser = Boolean(
+    profile?.isPro && (!profile?.proExpiresAt || new Date(profile?.proExpiresAt) > new Date())
+  );
+  const maxAllowedCapacity = isProUser ? 15 : 5;
+
   const [meetingRooms, setMeetingRooms] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [roomSearchQuery, setRoomSearchQuery] = useState("");
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDesc, setNewRoomDesc] = useState("");
-  const [newRoomMax, setNewRoomMax] = useState(10);
+  const [newRoomMax, setNewRoomMax] = useState(5);
   const [newRoomPrivate, setNewRoomPrivate] = useState(false);
   const [newRoomPasscode, setNewRoomPasscode] = useState("");
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -84,10 +89,6 @@ export default function CommunityDetail() {
   const [promptRoom, setPromptRoom] = useState(null);
   const [enteredPasscode, setEnteredPasscode] = useState("");
   const [joiningRoom, setJoiningRoom] = useState(false);
-
-  const isProUser = Boolean(
-    profile?.isPro && (!profile?.proExpiresAt || new Date(profile?.proExpiresAt) > new Date())
-  );
 
   const fetchCommunityData = useCallback(async () => {
     try {
@@ -461,10 +462,11 @@ export default function CommunityDetail() {
 
     try {
       setCreatingRoom(true);
+      const effectiveMax = Math.min(Math.max(Number(newRoomMax) || maxAllowedCapacity, 2), maxAllowedCapacity);
       const payload = {
         name: newRoomName.trim(),
         description: newRoomDesc.trim(),
-        maxParticipants: Number(newRoomMax) || 10,
+        maxParticipants: effectiveMax,
         isPrivate: Boolean(newRoomPrivate),
         passcode: newRoomPrivate ? newRoomPasscode.trim() : ""
       };
@@ -475,7 +477,7 @@ export default function CommunityDetail() {
         setShowCreateRoomModal(false);
         setNewRoomName("");
         setNewRoomDesc("");
-        setNewRoomMax(10);
+        setNewRoomMax(maxAllowedCapacity);
         setNewRoomPrivate(false);
         setNewRoomPasscode("");
         fetchMeetingRooms();
@@ -1207,14 +1209,24 @@ export default function CommunityDetail() {
               </div>
 
               <div className="form-group">
-                <label>Max Capacity: {newRoomMax} Participants</label>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <label>Max Capacity: {newRoomMax} Participants</label>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: isProUser ? "#a855f7" : "#94a3b8" }}>
+                    {isProUser ? "⭐ Pro Tier (Max 15)" : "Free Tier (Max 5)"}
+                  </span>
+                </div>
                 <input
                   type="range"
                   min="2"
-                  max="50"
-                  value={newRoomMax}
-                  onChange={(e) => setNewRoomMax(Number(e.target.value))}
+                  max={maxAllowedCapacity}
+                  value={Math.min(newRoomMax, maxAllowedCapacity)}
+                  onChange={(e) => setNewRoomMax(Math.min(Number(e.target.value), maxAllowedCapacity))}
                 />
+                {!isProUser && (
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0 0" }}>
+                    Free accounts can host up to 5 participants. Upgrade to ANOY Pro for up to 15.
+                  </p>
+                )}
               </div>
 
               <div className="form-group-checkbox">

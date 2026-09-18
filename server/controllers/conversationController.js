@@ -3,6 +3,8 @@ const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const Identity = require("../models/Identity");
 const Profile = require("../models/Profile");
+const Block = require("../models/Block");
+const Follow = require("../models/Follow");
 
 // Helper to attach Profile data (displayName, avatar, isPro, avatarDecoration) to populated participants
 const enrichConversationParticipants = async (conversations) => {
@@ -132,6 +134,42 @@ const getOrCreateConversation = async (req, res) => {
                 success: false,
                 message: "You cannot create a conversation with yourself"
             });
+        }
+
+        // Check for block relationship
+        const isBlocked = await Block.findOne({
+            $or: [
+                { blocker: req.user._id, blocked: recipient._id },
+                { blocker: recipient._id, blocked: req.user._id }
+            ]
+        });
+
+        if (isBlocked) {
+            return res.status(403).json({
+                success: false,
+                message: "Unable to start conversation with this user"
+            });
+        }
+
+        // Check recipient's message privacy settings
+        const recipientProfile = await Profile.findOne({ userId: recipient._id });
+        if (recipientProfile?.messagePrivacy === "NOBODY") {
+            return res.status(403).json({
+                success: false,
+                message: "This user does not accept direct messages"
+            });
+        } else if (recipientProfile?.messagePrivacy === "FOLLOWERS_ONLY") {
+            const isFollower = await Follow.findOne({
+                follower: req.user._id,
+                following: recipient._id,
+                status: "ACCEPTED"
+            });
+            if (!isFollower) {
+                return res.status(403).json({
+                    success: false,
+                    message: "This user only accepts direct messages from their followers"
+                });
+            }
         }
 
         let conversation = await Conversation.findOne({
@@ -328,6 +366,24 @@ const sendMessage = async (req, res) => {
             return res.status(403).json({
                 success: false,
                 message: "You are not authorized to send messages in this conversation"
+            });
+        }
+
+        // Check if other participant is blocked
+        const otherParticipantIds = conversation.participants.filter(
+            (p) => !p.equals(req.user._id)
+        );
+        const hasBlock = await Block.findOne({
+            $or: [
+                { blocker: req.user._id, blocked: { $in: otherParticipantIds } },
+                { blocker: { $in: otherParticipantIds }, blocked: req.user._id }
+            ]
+        });
+
+        if (hasBlock) {
+            return res.status(403).json({
+                success: false,
+                message: "Unable to send message. This user is blocked."
             });
         }
 

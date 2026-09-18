@@ -1,24 +1,27 @@
-const { uploadMedia } = require("../config/cloudinary");
+const cloudinaryConfig = require("../config/cloudinary");
 
 const uploadImage = async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({
                 success: false,
-                message: "No image file provided. Please attach an image."
+                message: "No media file provided. Please attach an image or video."
             });
         }
 
-        const result = await uploadMedia(
+        const result = await cloudinaryConfig.uploadMedia(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype
         );
 
+        const isVideo = result.resourceType === "video" || (req.file.mimetype && req.file.mimetype.startsWith("video/"));
+
         return res.status(201).json({
             success: true,
-            message: "Image uploaded successfully",
+            message: "Media uploaded successfully",
             media: {
+                type: isVideo ? "VIDEO" : "IMAGE",
                 url: result.url,
                 publicId: result.publicId,
                 width: result.width,
