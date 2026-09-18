@@ -262,4 +262,260 @@ describe("Email OTP Delivery & Security Suite", () => {
             expect(resendAgain.body.message).toMatch(/already verified/i);
         });
     });
+
+    describe("Password Reset OTP Delivery, Verification & Brute-Force Security Suite", () => {
+        const resetEmail = "resettest@test.com";
+        const resetUsername = "resetuser";
+        const initialPassword = "OldPassword123!";
+        const newPassword = "NewPassword123!";
+
+        beforeAll(async () => {
+            const bcrypt = require("bcryptjs");
+            const passwordHash = await bcrypt.hash(initialPassword, 10);
+            await Identity.deleteMany({
+                email: { $in: [resetEmail, "resetexp@test.com", "resetlock@test.com"] }
+            });
+            await Identity.create({
+                email: resetEmail,
+                username: resetUsername,
+                passwordHash,
+                loginProvider: "email",
+                emailVerified: true,
+                status: "ACTIVE"
+            });
+        });
+
+        test("POST /api/v1/auth/forgot-password - dispatches OTP and prevents user enumeration", async () => {
+            // Test existing user
+            const res = await request(app)
+                .post("/api/v1/auth/forgot-password")
+                .send({ email: resetEmail });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.otp).toBeUndefined(); // Never expose raw OTP in response
+
+            const user = await Identity.findOne({ email: resetEmail });
+            expect(user.passwordResetOTP).toBeDefined();
+            expect(user.passwordResetOTP).toHaveLength(64); // SHA-256 hash
+            expect(user.passwordResetExpiry).toBeDefined();
+            expect(user.passwordResetAttempts).toBe(0);
+
+            // Test non-existent email gives identical success response (anti-enumeration)
+            const nonExistentRes = await request(app)
+                .post("/api/v1/auth/forgot-password")
+                .send({ email: "doesnotexist_99@test.com" });
+
+            expect(nonExistentRes.statusCode).toBe(200);
+            expect(nonExistentRes.body.success).toBe(true);
+            expect(nonExistentRes.body.message).toMatch(/If an account with this email exists/i);
+        });
+
+        test("POST /api/v1/auth/forgot-password - excessive OTP requests are rate-limited", async () => {
+            const res = await request(app)
+                .post("/api/v1/auth/forgot-password")
+                .send({ email: resetEmail });
+
+            expect(res.statusCode).toBe(429);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toMatch(/wait/i);
+            expect(res.body.retryAfter).toBeGreaterThan(0);
+        });
+
+        test("POST /api/v1/auth/reset-password - wrong OTP increments failed attempts and returns remaining count", async () => {
+            const res = await request(app)
+                .post("/api/v1/auth/reset-password")
+                .send({
+                    email: resetEmail,
+                    otp: "000000",
+                    newPassword
+                });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toMatch(/4 attempts? remaining/i);
+
+            const user = await Identity.findOne({ email: resetEmail });
+            expect(user.passwordResetAttempts).toBe(1);
+        });
+
+        test("POST /api/v1/auth/reset-password - maximum failed attempts invalidates the OTP and rate-limits", async () => {
+            // Send 3 more failed attempts (total 4)
+            await request(app).post("/api/v1/auth/reset-password").send({ email: resetEmail, otp: "000001", newPassword });
+            await request(app).post("/api/v1/auth/reset-password").send({ email: resetEmail, otp: "000002", newPassword });
+            await request(app).post("/api/v1/auth/reset-password").send({ email: resetEmail, otp: "000003", newPassword });
+
+            // 5th failed attempt locks out
+            const res5 = await request(app)
+                .post("/api/v1/auth/reset-password")
+                .send({ email: resetEmail, otp: "000004", newPassword });
+
+            expect(res5.statusCode).toBe(429);
+            expect(res5.body.success).toBe(false);
+            expect(res5.body.message).toMatch(/maximum password reset attempts exceeded/i);
+
+            // Verify that the OTP is completely cleared/invalidated in DB
+            const lockedUser = await Identity.findOne({ email: resetEmail });
+            expect(lockedUser.passwordResetOTP).toBeUndefined();
+            expect(lockedUser.passwordResetExpiry).toBeUndefined();
+
+            // Subsequent attempts fail because OTP no longer exists
+            const subsequentRes = await request(app)
+                .post("/api/v1/auth/reset-password")
+                .send({ email: resetEmail, otp: "123456", newPassword });
+
+            expect(subsequentRes.statusCode).toBe(400);
+            expect(subsequentRes.body.message).toMatch(/no active password reset request found/i);
+        });
+
+        test("POST /api/v1/auth/reset-password - expired OTP fails and is cleared", async () => {
+            const knownOtp = "123987";
+            await Identity.create({
+                email: "resetexp@test.com",
+                username: "resetexpuser",
+                passwordHash: "dummyhash",
+                emailVerified: true,
+                status: "ACTIVE",
+                passwordResetOTP: hashOTP(knownOtp),
+                passwordResetExpiry: new Date(Date.now() - 60 * 1000) // 1 minute in past
+            });
+
+            const res = await request(app)
+                .post("/api/v1/auth/reset-password")
+                .send({
+                    email: "resetexp@test.com",
+                    otp: knownOtp,
+                    newPassword
+                });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toMatch(/expired/i);
+
+            const user = await Identity.findOne({ email: "resetexp@test.com" });
+            expect(user.passwordResetOTP).toBeUndefined();
+        });
+
+        test("POST /api/v1/auth/reset-password - correct OTP succeeds, resets password, and cannot be reused", async () => {
+            const validOtp = "554433";
+            await Identity.updateOne(
+                { email: resetEmail },
+                {
+                    $set: {
+                        passwordResetOTP: hashOTP(validOtp),
+                        passwordResetExpiry: new Date(Date.now() + 10 * 60 * 1000),
+                        passwordResetAttempts: 0
+                    }
+                }
+            );
+
+            // Successful reset
+            const resetRes = await request(app)
+                .post("/api/v1/auth/reset-password")
+                .send({
+                    email: resetEmail,
+                    otp: validOtp,
+                    newPassword
+                });
+
+            expect(resetRes.statusCode).toBe(200);
+            expect(resetRes.body.success).toBe(true);
+            expect(resetRes.body.message).toMatch(/password reset successfully/i);
+
+            // Verify OTP is cleared in DB
+            const user = await Identity.findOne({ email: resetEmail });
+            expect(user.passwordResetOTP).toBeUndefined();
+            expect(user.passwordResetExpiry).toBeUndefined();
+
+            // OTP cannot be reused
+            const reuseRes = await request(app)
+                .post("/api/v1/auth/reset-password")
+                .send({
+                    email: resetEmail,
+                    otp: validOtp,
+                    newPassword: "AnotherPassword123!"
+                });
+
+            expect(reuseRes.statusCode).toBe(400);
+            expect(reuseRes.body.message).toMatch(/no active password reset request found/i);
+
+            // Normal login with new password succeeds
+            const loginRes = await request(app)
+                .post("/api/v1/auth/login")
+                .send({
+                    identifier: resetEmail,
+                    password: newPassword
+                });
+
+            expect(loginRes.statusCode).toBe(200);
+            expect(loginRes.body.success).toBe(true);
+            expect(loginRes.body.token).toBeDefined();
+
+            // Login with old password fails
+            const oldLoginRes = await request(app)
+                .post("/api/v1/auth/login")
+                .send({
+                    identifier: resetEmail,
+                    password: initialPassword
+                });
+
+            expect(oldLoginRes.statusCode).toBe(401);
+        });
+
+        test("POST /api/v1/auth/reset-password - concurrent failed attempts cannot race or bypass the 5-attempt limit", async () => {
+            const raceEmail = "race@test.com";
+            const knownOtp = "998877";
+            const bcrypt = require("bcryptjs");
+            const passwordHash = await bcrypt.hash("InitialPass123!", 10);
+
+            await Identity.deleteMany({ email: raceEmail });
+            await Identity.create({
+                email: raceEmail,
+                username: "raceuser",
+                passwordHash,
+                loginProvider: "email",
+                emailVerified: true,
+                status: "ACTIVE",
+                passwordResetOTP: hashOTP(knownOtp),
+                passwordResetExpiry: new Date(Date.now() + 10 * 60 * 1000),
+                passwordResetAttempts: 0
+            });
+
+            // Fire 10 concurrent requests with wrong OTP
+            const concurrentRequests = Array.from({ length: 10 }, (_, i) =>
+                request(app)
+                    .post("/api/v1/auth/reset-password")
+                    .send({
+                        email: raceEmail,
+                        otp: `00000${i}`,
+                        newPassword: "BrandNewPass123!"
+                    })
+            );
+
+            const responses = await Promise.all(concurrentRequests);
+
+            // At least one request must receive 429 lock status
+            const status429Count = responses.filter((r) => r.statusCode === 429).length;
+            expect(status429Count).toBeGreaterThanOrEqual(1);
+
+            // Verify in DB that the OTP is completely invalidated/cleared
+            const lockedUser = await Identity.findOne({ email: raceEmail });
+            expect(lockedUser.passwordResetOTP).toBeUndefined();
+            expect(lockedUser.passwordResetExpiry).toBeUndefined();
+
+            // Correct OTP now fails because the limit was reached and OTP was destroyed
+            const res = await request(app)
+                .post("/api/v1/auth/reset-password")
+                .send({
+                    email: raceEmail,
+                    otp: knownOtp,
+                    newPassword: "BrandNewPass123!"
+                });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toMatch(/no active password reset request found/i);
+
+            await Identity.deleteMany({ email: raceEmail });
+        });
+    });
 });

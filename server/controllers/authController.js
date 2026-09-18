@@ -9,7 +9,38 @@ const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/e
 
 const OTP_EXPIRY_MINUTES = 10;
 const MAX_VERIFY_ATTEMPTS = 5;
+const MAX_RESET_ATTEMPTS = 5;
 const RESEND_COOLDOWN_SECONDS = 60;
+const MAX_COOLDOWN_CACHE_ENTRIES = 5000;
+
+// In-memory cooldown tracking for non-existent emails to prevent account enumeration via timing/rate-limit differences
+const forgotPasswordNonExistentCooldowns = new Map();
+
+/**
+ * Cleanup stale entries from the non-existent email cooldown map to prevent unbounded memory growth.
+ */
+const cleanupStaleCooldowns = (now = Date.now()) => {
+    const cooldownMs = RESEND_COOLDOWN_SECONDS * 1000;
+    for (const [key, timestamp] of forgotPasswordNonExistentCooldowns.entries()) {
+        if (now - timestamp >= cooldownMs) {
+            forgotPasswordNonExistentCooldowns.delete(key);
+        }
+    }
+};
+
+/**
+ * Record a non-existent email cooldown entry safely within bounded memory.
+ */
+const recordNonExistentCooldown = (email, now = Date.now()) => {
+    if (forgotPasswordNonExistentCooldowns.size >= MAX_COOLDOWN_CACHE_ENTRIES) {
+        cleanupStaleCooldowns(now);
+        if (forgotPasswordNonExistentCooldowns.size >= MAX_COOLDOWN_CACHE_ENTRIES) {
+            const oldestKey = forgotPasswordNonExistentCooldowns.keys().next().value;
+            if (oldestKey) forgotPasswordNonExistentCooldowns.delete(oldestKey);
+        }
+    }
+    forgotPasswordNonExistentCooldowns.set(email, now);
+};
 
 /**
  * Register a new user account and dispatch real email OTP.
@@ -443,7 +474,7 @@ const login = async (req, res) => {
 };
 
 /**
- * Request password reset OTP email.
+ * Request password reset OTP email with strict cooldown rate-limiting.
  */
 const forgotPassword = async (req, res) => {
     try {
@@ -456,10 +487,37 @@ const forgotPassword = async (req, res) => {
             });
         }
 
+        if (!validator.isEmail(email)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email address"
+            });
+        }
+
         const normalizedEmail = email.toLowerCase().trim();
+        const cooldownMs = RESEND_COOLDOWN_SECONDS * 1000;
+        const now = Date.now();
+
         const user = await Identity.findOne({ email: normalizedEmail });
 
         if (!user || user.status === "DELETED") {
+            // Check bounded in-memory cooldown for non-existent email to prevent user enumeration via timing/status differences
+            const lastRequested = forgotPasswordNonExistentCooldowns.get(normalizedEmail);
+            if (lastRequested) {
+                const timeSince = now - lastRequested;
+                if (timeSince < cooldownMs) {
+                    const remainingSec = Math.ceil((cooldownMs - timeSince) / 1000);
+                    return res.status(429).json({
+                        success: false,
+                        message: `Please wait ${remainingSec} second${remainingSec === 1 ? "" : "s"} before requesting another reset code.`,
+                        retryAfter: remainingSec
+                    });
+                }
+                // Stale entry found for this email, clean it up
+                forgotPasswordNonExistentCooldowns.delete(normalizedEmail);
+            }
+            recordNonExistentCooldown(normalizedEmail, now);
+
             // Return success anyway to prevent user enumeration
             return res.status(200).json({
                 success: true,
@@ -467,11 +525,26 @@ const forgotPassword = async (req, res) => {
             });
         }
 
+        // Check resend / reset request cooldown on the account
+        if (user.lastPasswordResetRequestedAt) {
+            const timeSinceLastResetRequest = now - new Date(user.lastPasswordResetRequestedAt).getTime();
+            if (timeSinceLastResetRequest < cooldownMs) {
+                const remainingSec = Math.ceil((cooldownMs - timeSinceLastResetRequest) / 1000);
+                return res.status(429).json({
+                    success: false,
+                    message: `Please wait ${remainingSec} second${remainingSec === 1 ? "" : "s"} before requesting another reset code.`,
+                    retryAfter: remainingSec
+                });
+            }
+        }
+
         const otp = generateOTP();
         const otpHashed = hashOTP(otp);
 
         user.passwordResetOTP = otpHashed;
         user.passwordResetExpiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+        user.passwordResetAttempts = 0;
+        user.lastPasswordResetRequestedAt = new Date();
         await user.save();
 
         try {
@@ -495,7 +568,7 @@ const forgotPassword = async (req, res) => {
 };
 
 /**
- * Reset password using 6-digit OTP.
+ * Reset password using 6-digit OTP with strict atomic attempt rate-limiting.
  */
 const resetPassword = async (req, res) => {
     try {
@@ -535,33 +608,120 @@ const resetPassword = async (req, res) => {
             });
         }
 
+        // Check expiration
         if (new Date() > new Date(expiry)) {
-            user.passwordResetOTP = undefined;
-            user.passwordResetExpiry = undefined;
-            await user.save();
+            await Identity.updateOne(
+                { _id: user._id, passwordResetExpiry: expiry },
+                {
+                    $unset: { passwordResetOTP: 1, passwordResetExpiry: 1 },
+                    $set: { passwordResetAttempts: 0 }
+                }
+            );
             return res.status(400).json({
                 success: false,
                 message: "Password reset code has expired. Please request a new code."
             });
         }
 
-        const isMatch = compareOTP(otp.toString().trim(), storedHash);
+        // Check if maximum failed attempts already exceeded
+        if ((user.passwordResetAttempts || 0) >= MAX_RESET_ATTEMPTS) {
+            await Identity.updateOne(
+                { _id: user._id },
+                {
+                    $unset: { passwordResetOTP: 1, passwordResetExpiry: 1 },
+                    $set: { passwordResetAttempts: 0 }
+                }
+            );
 
-        if (!isMatch) {
-            return res.status(400).json({
+            return res.status(429).json({
                 success: false,
-                message: "Invalid password reset code"
+                message: "Maximum password reset attempts exceeded. Please request a new code."
             });
         }
 
-        // Hash new password
+        const isMatch = compareOTP(otp.toString().trim(), storedHash);
+
+        if (!isMatch) {
+            // Atomically increment attempt count if OTP is still active
+            const updated = await Identity.findOneAndUpdate(
+                {
+                    _id: user._id,
+                    passwordResetOTP: { $exists: true, $ne: null }
+                },
+                {
+                    $inc: { passwordResetAttempts: 1 }
+                },
+                {
+                    returnDocument: "after"
+                }
+            );
+
+            if (!updated || !updated.passwordResetOTP) {
+                return res.status(400).json({
+                    success: false,
+                    message: "No active password reset request found. Please request a new code."
+                });
+            }
+
+            const attempts = updated.passwordResetAttempts || 0;
+
+            if (attempts >= MAX_RESET_ATTEMPTS) {
+                // Invalidate/clear the OTP atomically
+                await Identity.updateOne(
+                    { _id: user._id },
+                    {
+                        $unset: { passwordResetOTP: 1, passwordResetExpiry: 1 },
+                        $set: { passwordResetAttempts: 0 }
+                    }
+                );
+
+                return res.status(429).json({
+                    success: false,
+                    message: "Maximum password reset attempts exceeded. Please request a new code."
+                });
+            }
+
+            const remaining = MAX_RESET_ATTEMPTS - attempts;
+            return res.status(400).json({
+                success: false,
+                message: `Invalid password reset code. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
+            });
+        }
+
+        // OTP matched - atomically hash new password and invalidate OTP in a single operation
         const passwordHash = await bcrypt.hash(newPassword, 10);
-        user.passwordHash = passwordHash;
-        user.passwordResetOTP = undefined;
-        user.passwordResetExpiry = undefined;
-        // Invalidate all prior sessions
-        user.tokenVersion = (user.tokenVersion || 0) + 1;
-        await user.save();
+
+        const updatedUser = await Identity.findOneAndUpdate(
+            {
+                _id: user._id,
+                passwordResetOTP: storedHash,
+                passwordResetExpiry: { $gt: new Date() },
+                passwordResetAttempts: { $lt: MAX_RESET_ATTEMPTS }
+            },
+            {
+                $set: {
+                    passwordHash,
+                    passwordResetAttempts: 0
+                },
+                $unset: {
+                    passwordResetOTP: 1,
+                    passwordResetExpiry: 1
+                },
+                $inc: {
+                    tokenVersion: 1
+                }
+            },
+            {
+                returnDocument: "after"
+            }
+        );
+
+        if (!updatedUser) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid or expired reset code"
+            });
+        }
 
         return res.status(200).json({
             success: true,

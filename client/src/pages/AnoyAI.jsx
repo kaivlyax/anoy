@@ -199,11 +199,40 @@ export default function AnoyAI() {
     }
   };
 
-  // Render markdown with code block highlights
+  // Safely parse inline markdown (bold, inline code) into React elements
+  const renderInlineContent = (text) => {
+    if (!text) return null;
+
+    const tokenRegex = /(`[^`\n]+`|\*\*[^*\n]+\*\*)/g;
+    const segments = text.split(tokenRegex);
+
+    return segments.map((segment, idx) => {
+      if (!segment) return null;
+
+      if (segment.startsWith("`") && segment.endsWith("`") && segment.length >= 2) {
+        return (
+          <code key={idx} className="ai-inline-code">
+            {segment.slice(1, -1)}
+          </code>
+        );
+      }
+
+      if (segment.startsWith("**") && segment.endsWith("**") && segment.length >= 4) {
+        return (
+          <strong key={idx}>
+            {segment.slice(2, -2)}
+          </strong>
+        );
+      }
+
+      return segment;
+    });
+  };
+
+  // Render markdown safely with code block highlights, lists, and paragraphs
   const renderMessageContent = (content) => {
     if (!content) return null;
 
-    // Simple robust markdown parser for bold, code blocks, lists, and links
     const parts = content.split(/(```[\s\S]*?```)/g);
 
     return parts.map((part, index) => {
@@ -213,7 +242,7 @@ export default function AnoyAI() {
         const code = language ? lines.slice(1).join("\n") : lines.join("\n");
 
         return (
-          <div key={index} className="ai-code-block">
+          <div key={`code_${index}`} className="ai-code-block">
             {language && <div className="ai-code-lang">{language}</div>}
             <pre>
               <code>{code}</code>
@@ -222,28 +251,60 @@ export default function AnoyAI() {
         );
       }
 
-      // Format bold and list items
-      const formattedLines = part.split("\n").map((line, lIdx) => {
-        let parsedLine = line;
+      const lines = part.split("\n");
+      const elements = [];
+      let currentList = null; // { type: 'ul' | 'ol', items: [] }
 
-        // Bold formatting
-        parsedLine = parsedLine.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-
-        // Bullet point formatting
-        const isBullet = line.trim().startsWith("- ") || line.trim().startsWith("* ");
-        if (isBullet) {
-          const bulletText = parsedLine.replace(/^[\s]*[-*]\s+/, "");
-          return (
-            <li key={lIdx} dangerouslySetInnerHTML={{ __html: bulletText }} />
+      const flushList = () => {
+        if (currentList && currentList.items.length > 0) {
+          const ListComponent = currentList.type === "ol" ? "ol" : "ul";
+          elements.push(
+            <ListComponent
+              key={`list_${elements.length}`}
+              style={{ margin: "6px 0", paddingLeft: "20px" }}
+            >
+              {currentList.items.map((item, iIdx) => (
+                <li key={iIdx} style={{ margin: "2px 0" }}>
+                  {renderInlineContent(item)}
+                </li>
+              ))}
+            </ListComponent>
           );
+          currentList = null;
         }
+      };
 
-        return (
-          <p key={lIdx} dangerouslySetInnerHTML={{ __html: parsedLine }} style={{ margin: "4px 0" }} />
-        );
+      lines.forEach((line, lIdx) => {
+        const isBullet = /^\s*[-*]\s+/.test(line);
+        const isNumbered = /^\s*\d+\.\s+/.test(line);
+
+        if (isBullet) {
+          if (!currentList || currentList.type !== "ul") {
+            flushList();
+            currentList = { type: "ul", items: [] };
+          }
+          currentList.items.push(line.replace(/^\s*[-*]\s+/, ""));
+        } else if (isNumbered) {
+          if (!currentList || currentList.type !== "ol") {
+            flushList();
+            currentList = { type: "ol", items: [] };
+          }
+          currentList.items.push(line.replace(/^\s*\d+\.\s+/, ""));
+        } else {
+          flushList();
+          if (line.trim().length > 0) {
+            elements.push(
+              <p key={`p_${lIdx}`} style={{ margin: "4px 0" }}>
+                {renderInlineContent(line)}
+              </p>
+            );
+          }
+        }
       });
 
-      return <div key={index}>{formattedLines}</div>;
+      flushList();
+
+      return <div key={`block_${index}`}>{elements}</div>;
     });
   };
 
