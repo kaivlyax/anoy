@@ -98,6 +98,14 @@ const requireCommunityMember = async (req, res, next) => {
         const community = await loadCommunity(req, res);
         if (!community) return;
 
+        const isBanned = req.user && community.bannedUsers?.some((b) => (b.user?._id ? b.user._id.equals(req.user._id) : b.user?.equals?.(req.user._id)));
+        if (isBanned) {
+            return res.status(403).json({
+                success: false,
+                message: "You are banned from this community"
+            });
+        }
+
         const isOwner = req.user && community.owner.equals(req.user._id);
         const isMod = req.user && community.moderators.some((modId) => modId.equals(req.user._id));
         const isMember = req.user && community.members.some((memberId) => memberId.equals(req.user._id));

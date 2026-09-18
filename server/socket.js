@@ -9,6 +9,8 @@ const Community = require("./models/Community");
 const CommunityMessage = require("./models/CommunityMessage");
 const MeetingRoom = require("./models/MeetingRoom");
 const StudyRoom = MeetingRoom;
+const Block = require("./models/Block");
+const Follow = require("./models/Follow");
 
 // In-memory mapping: userId (string) -> Set of socket IDs
 const userSockets = new Map();
@@ -202,6 +204,46 @@ const initSocket = (httpServer) => {
                 if (!isParticipant) {
                     if (callback) callback({ success: false, message: "Unauthorized" });
                     return;
+                }
+
+                const otherParticipantId = conversation.participants.find(
+                    (p) => !p.equals(socket.user._id)
+                );
+
+                if (otherParticipantId) {
+                    const recipient = await Identity.findById(otherParticipantId);
+                    if (!recipient || recipient.status === "DELETED") {
+                        if (callback) callback({ success: false, message: "Recipient user not found or inactive" });
+                        return;
+                    }
+
+                    const isBlocked = await Block.findOne({
+                        $or: [
+                            { blocker: socket.user._id, blocked: otherParticipantId },
+                            { blocker: otherParticipantId, blocked: socket.user._id }
+                        ]
+                    });
+
+                    if (isBlocked) {
+                        if (callback) callback({ success: false, message: "Unable to send message. This user is blocked." });
+                        return;
+                    }
+
+                    const recipientProfile = await Profile.findOne({ userId: otherParticipantId });
+                    if (recipientProfile?.messagePrivacy === "NOBODY") {
+                        if (callback) callback({ success: false, message: "This user does not accept direct messages" });
+                        return;
+                    } else if (recipientProfile?.messagePrivacy === "FOLLOWERS_ONLY") {
+                        const isFollower = await Follow.findOne({
+                            follower: socket.user._id,
+                            following: otherParticipantId,
+                            status: "ACCEPTED"
+                        });
+                        if (!isFollower) {
+                            if (callback) callback({ success: false, message: "This user only accepts direct messages from their followers" });
+                            return;
+                        }
+                    }
                 }
 
                 const message = new Message({
@@ -615,6 +657,12 @@ const initSocket = (httpServer) => {
                     return;
                 }
 
+                // Check if user is banned from the community
+                if (room.community?.bannedUsers?.some((b) => (b.user?._id ? b.user._id.equals(socket.user._id) : b.user?.equals?.(socket.user._id)))) {
+                    if (callback) callback({ success: false, message: "You are banned from this community" });
+                    return;
+                }
+
                 if (room.isPrivate && room.passcode && passcode !== room.passcode) {
                     if (callback) callback({ success: false, message: "Incorrect passcode" });
                     return;
@@ -627,27 +675,58 @@ const initSocket = (httpServer) => {
                     }
                 }
 
+                // Enforce Host Tier Limit (5 Free vs 15 Pro)
+                const hostProfile = await Profile.findOne({ userId: room.createdBy || room.creator });
+                const isHostPro = Boolean(
+                    hostProfile?.isPro && (!hostProfile?.proExpiresAt || new Date(hostProfile.proExpiresAt) > new Date())
+                );
+                const hostTierLimit = isHostPro ? 15 : 5;
+                const effectiveMax = Math.min(room.maxParticipants || hostTierLimit, hostTierLimit);
+
+                // Check capacity and atomically register participant
+                const existingIdx = room.activeParticipants.findIndex((p) => p.user.equals(socket.user._id));
+                if (existingIdx >= 0) {
+                    await MeetingRoom.updateOne(
+                        { _id: roomId, "activeParticipants.user": socket.user._id },
+                        { $set: { "activeParticipants.$.socketId": socket.id } }
+                    );
+                } else {
+                    const updated = await MeetingRoom.findOneAndUpdate(
+                        {
+                            _id: roomId,
+                            isActive: true,
+                            "activeParticipants.user": { $ne: socket.user._id },
+                            $expr: { $lt: [{ $size: "$activeParticipants" }, effectiveMax] }
+                        },
+                        {
+                            $push: {
+                                activeParticipants: {
+                                    user: socket.user._id,
+                                    socketId: socket.id,
+                                    joinedAt: new Date(),
+                                    isMuted: false,
+                                    isVideoOff: false,
+                                    isScreenSharing: false
+                                }
+                            }
+                        },
+                        { returnDocument: "after" }
+                    );
+
+                    if (!updated) {
+                        if (callback) callback({
+                            success: false,
+                            message: `Meeting room is full (Max ${effectiveMax} participants for ${isHostPro ? "ANOY Pro" : "Free"} host)`
+                        });
+                        return;
+                    }
+                }
+
                 const roomKey = `meeting_room:${roomId}`;
                 const legacyKey = `study_room:${roomId}`;
                 socket.join(roomKey);
                 socket.join(legacyKey);
                 socketMeetingRooms.get(socket.id)?.add(roomId);
-
-                // Update participant in DB
-                const existingIdx = room.activeParticipants.findIndex((p) => p.user.equals(socket.user._id));
-                if (existingIdx >= 0) {
-                    room.activeParticipants[existingIdx].socketId = socket.id;
-                } else {
-                    room.activeParticipants.push({
-                        user: socket.user._id,
-                        socketId: socket.id,
-                        joinedAt: new Date(),
-                        isMuted: false,
-                        isVideoOff: false,
-                        isScreenSharing: false
-                    });
-                }
-                await room.save();
 
                 // Find other connected sockets in this room
                 const socketsInRoom = await io.in(roomKey).fetchSockets();

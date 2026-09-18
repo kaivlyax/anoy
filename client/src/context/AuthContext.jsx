@@ -112,7 +112,8 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: userData };
     } catch (err) {
       const message = err.response?.data?.message || "Login failed. Please check your credentials.";
-      return { success: false, error: message };
+      const userEmail = err.response?.data?.email;
+      return { success: false, error: message, email: userEmail };
     }
   };
 

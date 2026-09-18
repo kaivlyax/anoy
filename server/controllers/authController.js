@@ -5,11 +5,42 @@ const jwt = require("jsonwebtoken");
 
 const generateOTP = require("../utils/generateOTP");
 const { hashOTP, compareOTP } = require("../utils/hashUtils");
-const { sendVerificationEmail } = require("../services/emailService");
+const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/emailService");
 
 const OTP_EXPIRY_MINUTES = 10;
 const MAX_VERIFY_ATTEMPTS = 5;
+const MAX_RESET_ATTEMPTS = 5;
 const RESEND_COOLDOWN_SECONDS = 60;
+const MAX_COOLDOWN_CACHE_ENTRIES = 5000;
+
+// In-memory cooldown tracking for non-existent emails to prevent account enumeration via timing/rate-limit differences
+const forgotPasswordNonExistentCooldowns = new Map();
+
+/**
+ * Cleanup stale entries from the non-existent email cooldown map to prevent unbounded memory growth.
+ */
+const cleanupStaleCooldowns = (now = Date.now()) => {
+    const cooldownMs = RESEND_COOLDOWN_SECONDS * 1000;
+    for (const [key, timestamp] of forgotPasswordNonExistentCooldowns.entries()) {
+        if (now - timestamp >= cooldownMs) {
+            forgotPasswordNonExistentCooldowns.delete(key);
+        }
+    }
+};
+
+/**
+ * Record a non-existent email cooldown entry safely within bounded memory.
+ */
+const recordNonExistentCooldown = (email, now = Date.now()) => {
+    if (forgotPasswordNonExistentCooldowns.size >= MAX_COOLDOWN_CACHE_ENTRIES) {
+        cleanupStaleCooldowns(now);
+        if (forgotPasswordNonExistentCooldowns.size >= MAX_COOLDOWN_CACHE_ENTRIES) {
+            const oldestKey = forgotPasswordNonExistentCooldowns.keys().next().value;
+            if (oldestKey) forgotPasswordNonExistentCooldowns.delete(oldestKey);
+        }
+    }
+    forgotPasswordNonExistentCooldowns.set(email, now);
+};
 
 /**
  * Register a new user account and dispatch real email OTP.
@@ -51,17 +82,34 @@ const register = async (req, res) => {
         // =========================
         // Check existing account
         // =========================
-        const existingUser = await Identity.findOne({
+        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedUsername = username.toLowerCase().trim();
+
+        const existingEmail = await Identity.findOne({
             $or: [
-                { email: email.toLowerCase().trim() },
-                { username: username.toLowerCase().trim() }
+                { email: normalizedEmail },
+                { email: new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
             ]
         });
 
-        if (existingUser) {
+        if (existingEmail) {
             return res.status(400).json({
                 success: false,
-                message: "Email or username already exists"
+                message: "An account with this email already exists. Please sign in or reset your password."
+            });
+        }
+
+        const existingUsername = await Identity.findOne({
+            $or: [
+                { username: normalizedUsername },
+                { username: new RegExp(`^${normalizedUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+            ]
+        });
+
+        if (existingUsername) {
+            return res.status(400).json({
+                success: false,
+                message: "This username is already taken. Please choose another username."
             });
         }
 
@@ -80,8 +128,8 @@ const register = async (req, res) => {
         // Create Identity record
         // =========================
         const user = await Identity.create({
-            email: email.toLowerCase().trim(),
-            username: username.toLowerCase().trim(),
+            email: normalizedEmail,
+            username: normalizedUsername,
             passwordHash,
             loginProvider: "email",
             emailVerified: false,
@@ -99,7 +147,6 @@ const register = async (req, res) => {
             await sendVerificationEmail(user.email, otp, user.username);
         } catch (emailErr) {
             console.error("[register] Email delivery failed:", emailErr.message);
-            // We continue so account exists, user can use resend OTP
         }
 
         return res.status(201).json({
@@ -242,8 +289,18 @@ const resendOTP = async (req, res) => {
             });
         }
 
-        const normalizedEmail = email.toLowerCase().trim();
-        const user = await Identity.findOne({ email: normalizedEmail });
+        const normalizedInput = email.toLowerCase().trim();
+        const escaped = normalizedInput.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const caseInsensitiveRegex = new RegExp(`^${escaped}$`, "i");
+
+        const user = await Identity.findOne({
+            $or: [
+                { email: normalizedInput },
+                { username: normalizedInput },
+                { email: caseInsensitiveRegex },
+                { username: caseInsensitiveRegex }
+            ]
+        });
 
         if (!user) {
             return res.status(404).json({
@@ -289,6 +346,10 @@ const resendOTP = async (req, res) => {
             await sendVerificationEmail(user.email, otp, user.username);
         } catch (emailErr) {
             console.error("[resendOTP] Email delivery failed:", emailErr.message);
+            return res.status(500).json({
+                success: false,
+                message: "Failed to dispatch verification email. Please try again in a few moments."
+            });
         }
 
         return res.status(200).json({
@@ -319,12 +380,16 @@ const login = async (req, res) => {
             });
         }
 
-        const normalizedIdentifier = identifier.toLowerCase().trim();
+        const trimmedIdentifier = identifier.trim();
+        const escaped = trimmedIdentifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const caseInsensitiveRegex = new RegExp(`^${escaped}$`, "i");
 
         const user = await Identity.findOne({
             $or: [
-                { email: normalizedIdentifier },
-                { username: normalizedIdentifier }
+                { email: trimmedIdentifier.toLowerCase() },
+                { username: trimmedIdentifier.toLowerCase() },
+                { email: caseInsensitiveRegex },
+                { username: caseInsensitiveRegex }
             ]
         });
 
@@ -349,10 +414,10 @@ const login = async (req, res) => {
             });
         }
 
-        if (!user.emailVerified) {
-            return res.status(403).json({
+        if (!user.passwordHash) {
+            return res.status(401).json({
                 success: false,
-                message: "Please verify your email before logging in"
+                message: "Invalid credentials"
             });
         }
 
@@ -365,13 +430,22 @@ const login = async (req, res) => {
             });
         }
 
+        if (!user.emailVerified) {
+            return res.status(403).json({
+                success: false,
+                message: "Please verify your email before logging in",
+                email: user.email
+            });
+        }
+
         user.lastLogin = new Date();
         await user.save();
 
         const token = jwt.sign(
             {
                 userId: user._id.toString(),
-                username: user.username
+                username: user.username,
+                tokenVersion: user.tokenVersion || 0
             },
             process.env.JWT_SECRET,
             {
@@ -399,9 +473,275 @@ const login = async (req, res) => {
     }
 };
 
+/**
+ * Request password reset OTP email with strict cooldown rate-limiting.
+ */
+const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "Email is required"
+            });
+        }
+
+        if (!validator.isEmail(email)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email address"
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+        const cooldownMs = RESEND_COOLDOWN_SECONDS * 1000;
+        const now = Date.now();
+
+        const user = await Identity.findOne({ email: normalizedEmail });
+
+        if (!user || user.status === "DELETED") {
+            // Check bounded in-memory cooldown for non-existent email to prevent user enumeration via timing/status differences
+            const lastRequested = forgotPasswordNonExistentCooldowns.get(normalizedEmail);
+            if (lastRequested) {
+                const timeSince = now - lastRequested;
+                if (timeSince < cooldownMs) {
+                    const remainingSec = Math.ceil((cooldownMs - timeSince) / 1000);
+                    return res.status(429).json({
+                        success: false,
+                        message: `Please wait ${remainingSec} second${remainingSec === 1 ? "" : "s"} before requesting another reset code.`,
+                        retryAfter: remainingSec
+                    });
+                }
+                // Stale entry found for this email, clean it up
+                forgotPasswordNonExistentCooldowns.delete(normalizedEmail);
+            }
+            recordNonExistentCooldown(normalizedEmail, now);
+
+            // Return success anyway to prevent user enumeration
+            return res.status(200).json({
+                success: true,
+                message: "If an account with this email exists, a password reset code has been sent."
+            });
+        }
+
+        // Check resend / reset request cooldown on the account
+        if (user.lastPasswordResetRequestedAt) {
+            const timeSinceLastResetRequest = now - new Date(user.lastPasswordResetRequestedAt).getTime();
+            if (timeSinceLastResetRequest < cooldownMs) {
+                const remainingSec = Math.ceil((cooldownMs - timeSinceLastResetRequest) / 1000);
+                return res.status(429).json({
+                    success: false,
+                    message: `Please wait ${remainingSec} second${remainingSec === 1 ? "" : "s"} before requesting another reset code.`,
+                    retryAfter: remainingSec
+                });
+            }
+        }
+
+        const otp = generateOTP();
+        const otpHashed = hashOTP(otp);
+
+        user.passwordResetOTP = otpHashed;
+        user.passwordResetExpiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+        user.passwordResetAttempts = 0;
+        user.lastPasswordResetRequestedAt = new Date();
+        await user.save();
+
+        try {
+            await sendPasswordResetEmail(user.email, otp, user.username);
+        } catch (emailErr) {
+            console.error("[forgotPassword] Email delivery failed:", emailErr.message);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "If an account with this email exists, a password reset code has been sent."
+        });
+
+    } catch (error) {
+        console.error("Forgot password error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+    }
+};
+
+/**
+ * Reset password using 6-digit OTP with strict atomic attempt rate-limiting.
+ */
+const resetPassword = async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Email, OTP, and new password are required"
+            });
+        }
+
+        if (newPassword.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 8 characters"
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+        const user = await Identity.findOne({ email: normalizedEmail });
+
+        if (!user || user.status === "DELETED") {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid or expired reset code"
+            });
+        }
+
+        const storedHash = user.passwordResetOTP;
+        const expiry = user.passwordResetExpiry;
+
+        if (!storedHash || !expiry) {
+            return res.status(400).json({
+                success: false,
+                message: "No active password reset request found. Please request a new code."
+            });
+        }
+
+        // Check expiration
+        if (new Date() > new Date(expiry)) {
+            await Identity.updateOne(
+                { _id: user._id, passwordResetExpiry: expiry },
+                {
+                    $unset: { passwordResetOTP: 1, passwordResetExpiry: 1 },
+                    $set: { passwordResetAttempts: 0 }
+                }
+            );
+            return res.status(400).json({
+                success: false,
+                message: "Password reset code has expired. Please request a new code."
+            });
+        }
+
+        // Check if maximum failed attempts already exceeded
+        if ((user.passwordResetAttempts || 0) >= MAX_RESET_ATTEMPTS) {
+            await Identity.updateOne(
+                { _id: user._id },
+                {
+                    $unset: { passwordResetOTP: 1, passwordResetExpiry: 1 },
+                    $set: { passwordResetAttempts: 0 }
+                }
+            );
+
+            return res.status(429).json({
+                success: false,
+                message: "Maximum password reset attempts exceeded. Please request a new code."
+            });
+        }
+
+        const isMatch = compareOTP(otp.toString().trim(), storedHash);
+
+        if (!isMatch) {
+            // Atomically increment attempt count if OTP is still active
+            const updated = await Identity.findOneAndUpdate(
+                {
+                    _id: user._id,
+                    passwordResetOTP: { $exists: true, $ne: null }
+                },
+                {
+                    $inc: { passwordResetAttempts: 1 }
+                },
+                {
+                    returnDocument: "after"
+                }
+            );
+
+            if (!updated || !updated.passwordResetOTP) {
+                return res.status(400).json({
+                    success: false,
+                    message: "No active password reset request found. Please request a new code."
+                });
+            }
+
+            const attempts = updated.passwordResetAttempts || 0;
+
+            if (attempts >= MAX_RESET_ATTEMPTS) {
+                // Invalidate/clear the OTP atomically
+                await Identity.updateOne(
+                    { _id: user._id },
+                    {
+                        $unset: { passwordResetOTP: 1, passwordResetExpiry: 1 },
+                        $set: { passwordResetAttempts: 0 }
+                    }
+                );
+
+                return res.status(429).json({
+                    success: false,
+                    message: "Maximum password reset attempts exceeded. Please request a new code."
+                });
+            }
+
+            const remaining = MAX_RESET_ATTEMPTS - attempts;
+            return res.status(400).json({
+                success: false,
+                message: `Invalid password reset code. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
+            });
+        }
+
+        // OTP matched - atomically hash new password and invalidate OTP in a single operation
+        const passwordHash = await bcrypt.hash(newPassword, 10);
+
+        const updatedUser = await Identity.findOneAndUpdate(
+            {
+                _id: user._id,
+                passwordResetOTP: storedHash,
+                passwordResetExpiry: { $gt: new Date() },
+                passwordResetAttempts: { $lt: MAX_RESET_ATTEMPTS }
+            },
+            {
+                $set: {
+                    passwordHash,
+                    passwordResetAttempts: 0
+                },
+                $unset: {
+                    passwordResetOTP: 1,
+                    passwordResetExpiry: 1
+                },
+                $inc: {
+                    tokenVersion: 1
+                }
+            },
+            {
+                returnDocument: "after"
+            }
+        );
+
+        if (!updatedUser) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid or expired reset code"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Password reset successfully. You can now log in with your new password."
+        });
+
+    } catch (error) {
+        console.error("Reset password error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+    }
+};
+
 module.exports = {
     register,
     verifyEmail,
     resendOTP,
-    login
+    login,
+    forgotPassword,
+    resetPassword
 };

@@ -88,14 +88,27 @@ const identitySchema = new mongoose.Schema(
             type: String
         },
 
-
         passwordResetExpiry: {
+            type: Date
+        },
+
+        passwordResetAttempts: {
+            type: Number,
+            default: 0
+        },
+
+        lastPasswordResetRequestedAt: {
             type: Date
         },
 
 
         lastLogin: {
             type: Date
+        },
+
+        tokenVersion: {
+            type: Number,
+            default: 0
         }
 
     },

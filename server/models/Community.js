@@ -60,6 +60,31 @@ const communitySchema = new mongoose.Schema(
             }
         ],
 
+        bannedUsers: [
+            {
+                user: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "Identity",
+                    required: true
+                },
+                bannedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "Identity",
+                    required: true
+                },
+                reason: {
+                    type: String,
+                    trim: true,
+                    maxlength: 300,
+                    default: "Violation of community rules"
+                },
+                bannedAt: {
+                    type: Date,
+                    default: Date.now
+                }
+            }
+        ],
+
         boostCount: {
             type: Number,
             default: 0

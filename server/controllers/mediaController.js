@@ -1,24 +1,38 @@
-const { uploadMedia } = require("../config/cloudinary");
+const cloudinaryConfig = require("../config/cloudinary");
+const { getUploadLimits } = require("../middleware/premiumMiddleware");
 
 const uploadImage = async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({
                 success: false,
-                message: "No image file provided. Please attach an image."
+                message: "No media file provided. Please attach an image or video."
             });
         }
 
-        const result = await uploadMedia(
+        // Enforce user tier upload limits (5MB for Free, 25MB for Pro)
+        const fileSize = req.file.size || (req.file.buffer ? req.file.buffer.length : 0);
+        const limits = getUploadLimits(Boolean(req.isPro));
+        if (fileSize > limits.maxBytes) {
+            return res.status(400).json({
+                success: false,
+                message: `File size exceeds your ${limits.maxLabel} upload limit.${!req.isPro ? " Upgrade to ANOY Pro for 25MB HD uploads." : ""}`
+            });
+        }
+
+        const result = await cloudinaryConfig.uploadMedia(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype
         );
 
+        const isVideo = result.resourceType === "video" || (req.file.mimetype && req.file.mimetype.startsWith("video/"));
+
         return res.status(201).json({
             success: true,
-            message: "Image uploaded successfully",
+            message: "Media uploaded successfully",
             media: {
+                type: isVideo ? "VIDEO" : "IMAGE",
                 url: result.url,
                 publicId: result.publicId,
                 width: result.width,

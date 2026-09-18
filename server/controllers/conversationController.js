@@ -3,6 +3,8 @@ const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const Identity = require("../models/Identity");
 const Profile = require("../models/Profile");
+const Block = require("../models/Block");
+const Follow = require("../models/Follow");
 
 // Helper to attach Profile data (displayName, avatar, isPro, avatarDecoration) to populated participants
 const enrichConversationParticipants = async (conversations) => {
@@ -53,7 +55,7 @@ const getUserConversations = async (req, res) => {
         const conversations = await Conversation.find({
             participants: req.user._id
         })
-            .populate("participants", "username email")
+            .populate("participants", "username")
             .populate({
                 path: "lastMessage",
                 populate: { path: "sender", select: "username" }
@@ -120,7 +122,7 @@ const getOrCreateConversation = async (req, res) => {
             });
         }
 
-        if (!recipient) {
+        if (!recipient || recipient.status === "DELETED") {
             return res.status(404).json({
                 success: false,
                 message: "Recipient user not found"
@@ -134,13 +136,49 @@ const getOrCreateConversation = async (req, res) => {
             });
         }
 
+        // Check for block relationship
+        const isBlocked = await Block.findOne({
+            $or: [
+                { blocker: req.user._id, blocked: recipient._id },
+                { blocker: recipient._id, blocked: req.user._id }
+            ]
+        });
+
+        if (isBlocked) {
+            return res.status(403).json({
+                success: false,
+                message: "Unable to start conversation with this user"
+            });
+        }
+
+        // Check recipient's message privacy settings
+        const recipientProfile = await Profile.findOne({ userId: recipient._id });
+        if (recipientProfile?.messagePrivacy === "NOBODY") {
+            return res.status(403).json({
+                success: false,
+                message: "This user does not accept direct messages"
+            });
+        } else if (recipientProfile?.messagePrivacy === "FOLLOWERS_ONLY") {
+            const isFollower = await Follow.findOne({
+                follower: req.user._id,
+                following: recipient._id,
+                status: "ACCEPTED"
+            });
+            if (!isFollower) {
+                return res.status(403).json({
+                    success: false,
+                    message: "This user only accepts direct messages from their followers"
+                });
+            }
+        }
+
         let conversation = await Conversation.findOne({
             participants: {
                 $all: [req.user._id, recipient._id],
                 $size: 2
             }
         })
-            .populate("participants", "username email")
+            .populate("participants", "username")
             .populate({
                 path: "lastMessage",
                 populate: { path: "sender", select: "username" }
@@ -155,7 +193,7 @@ const getOrCreateConversation = async (req, res) => {
             await conversation.save();
 
             conversation = await Conversation.findById(conversation._id)
-                .populate("participants", "username email");
+                .populate("participants", "username");
             isNew = true;
         }
 
@@ -329,6 +367,56 @@ const sendMessage = async (req, res) => {
                 success: false,
                 message: "You are not authorized to send messages in this conversation"
             });
+        }
+
+        // Check if other participant is blocked, deleted, or privacy restricts messages
+        const otherParticipantIds = conversation.participants.filter(
+            (p) => !p.equals(req.user._id)
+        );
+        const otherParticipantId = otherParticipantIds[0];
+
+        if (otherParticipantId) {
+            const recipient = await Identity.findById(otherParticipantId);
+            if (!recipient || recipient.status === "DELETED") {
+                return res.status(404).json({
+                    success: false,
+                    message: "Recipient user not found or has deleted their account."
+                });
+            }
+
+            const hasBlock = await Block.findOne({
+                $or: [
+                    { blocker: req.user._id, blocked: otherParticipantId },
+                    { blocker: otherParticipantId, blocked: req.user._id }
+                ]
+            });
+
+            if (hasBlock) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Unable to send message. This user is blocked."
+                });
+            }
+
+            const recipientProfile = await Profile.findOne({ userId: otherParticipantId });
+            if (recipientProfile?.messagePrivacy === "NOBODY") {
+                return res.status(403).json({
+                    success: false,
+                    message: "This user does not accept direct messages"
+                });
+            } else if (recipientProfile?.messagePrivacy === "FOLLOWERS_ONLY") {
+                const isFollower = await Follow.findOne({
+                    follower: req.user._id,
+                    following: otherParticipantId,
+                    status: "ACCEPTED"
+                });
+                if (!isFollower) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "This user only accepts direct messages from their followers"
+                    });
+                }
+            }
         }
 
         const message = new Message({

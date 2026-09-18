@@ -17,7 +17,7 @@ describe("Study Rooms Collaborative Video System Suite", () => {
             process.env.JWT_SECRET = "ff2add0f28c6c8da2aaf72cc2a9728f3bb0f2876eba5a3379946a1b8fd7717ef0bf6fa58872dfd2bc89e78211257d09a58e3206fe73abd93aff7325fac3b7f46";
         }
 
-        if (mongoose.connection.readyState === 0) {
+        if (mongoose.connection.readyState !== 1) {
             await mongoose.connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/anoy");
         }
 
@@ -45,14 +45,13 @@ describe("Study Rooms Collaborative Video System Suite", () => {
 
         tokenA = jwt.sign({ userId: studentA._id, username: studentA.username }, process.env.JWT_SECRET);
         tokenB = jwt.sign({ userId: studentB._id, username: studentB.username }, process.env.JWT_SECRET);
-    });
+    }, 30000);
 
     afterAll(async () => {
         await Identity.deleteMany({ email: { $in: ["student_a@test.com", "student_b@test.com"] } });
         await Profile.deleteMany({ username: { $in: ["student_a", "student_b"] } });
         await StudyRoom.deleteMany({ title: "Algorithms Final Exam Prep" });
-        await mongoose.connection.close();
-    });
+    }, 30000);
 
     it("POST /api/v1/study-rooms - Student A creates a study room", async () => {
         const res = await request(app)

@@ -95,96 +95,27 @@ export default function Store() {
   );
 
   /**
-   * Razorpay Standard Web Checkout Handler for ANOY Pro Plans
+   * Razorpay Standard Web Checkout Handler for ANOY Pro Plans (Currently in Coming Soon mode)
    */
   const handleRazorpaySubscribe = async (plan) => {
+    addToast("ANOY Pro subscriptions are coming soon! Stay tuned.", "info");
+    /* Future activation handler:
     if (!plan || processingPlan || verifyingPayment) return;
-
     try {
       setProcessingPlan(plan.planCode);
-
-      // 1. Ensure Razorpay Checkout SDK is loaded
       const isLoaded = await loadRazorpayScript();
       if (!isLoaded || !window.Razorpay) {
         addToast("Failed to load Razorpay SDK. Please check your internet connection.", "error");
         setProcessingPlan(null);
         return;
       }
-
-      // 2. Call backend to create Razorpay Order
       const orderRes = await paymentApi.createOrder(plan.planCode);
-      if (!orderRes.data?.success) {
-        throw new Error(orderRes.data?.message || "Failed to create payment order");
-      }
-
+      if (!orderRes.data?.success) throw new Error(orderRes.data?.message || "Failed to create payment order");
       const { order_id, amount, currency, key_id } = orderRes.data;
       const razorpayKey = key_id || import.meta.env.VITE_RAZORPAY_KEY_ID;
-
-      if (!razorpayKey) {
-        addToast("Razorpay Key ID is missing. Please configure RAZORPAY_KEY_ID in server/.env", "error");
-        setProcessingPlan(null);
-        return;
-      }
-
-      // 3. Open Razorpay Checkout Modal
-      const options = {
-        key: razorpayKey,
-        amount: amount,
-        currency: currency || "INR",
-        name: "ANOY Social",
-        description: `ANOY Pro - ${plan.name}`,
-        image: "/favicon.svg",
-        order_id: order_id,
-        prefill: {
-          name: profile?.displayName || user?.username || "ANOY Member",
-          email: user?.email || ""
-        },
-        theme: {
-          color: "#6366f1"
-        },
-        handler: async function (response) {
-          try {
-            setVerifyingPayment(true);
-            const verifyRes = await paymentApi.verifyPayment({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
-            });
-
-            if (verifyRes.data.success) {
-              addToast("🎉 Congratulations! Your ANOY Pro membership is now active!", "success");
-              await refreshProfile();
-              await fetchStoreData();
-            } else {
-              addToast(verifyRes.data.message || "Payment verification failed", "error");
-            }
-          } catch (err) {
-            console.error("Verification error:", err);
-            addToast(err.response?.data?.message || "Payment verification failed on server", "error");
-          } finally {
-            setVerifyingPayment(false);
-            setProcessingPlan(null);
-          }
-        },
-        modal: {
-          ondismiss: function () {
-            setProcessingPlan(null);
-            addToast("Payment window closed", "info");
-          }
-        }
-      };
-
-      const rzp = new window.Razorpay(options);
-      rzp.on("payment.failed", function (response) {
-        setProcessingPlan(null);
-        addToast(response.error?.description || "Payment failed", "error");
-      });
-      rzp.open();
-    } catch (err) {
-      console.error("Razorpay order creation error:", err);
-      addToast(err.response?.data?.message || err.message || "Failed to initialize payment", "error");
-      setProcessingPlan(null);
-    }
+      // ...
+    } catch (err) { ... }
+    */
   };
 
   /**
@@ -349,66 +280,87 @@ export default function Store() {
 
       {!loading && catalog && (
         <div className="store-content-grid">
-          {/* TAB 1: PRO PLANS (RAZORPAY INTEGRATED) */}
+          {/* TAB 1: PRO PLANS (COMING SOON) */}
           {activeTab === "plans" && (
-            <div className="plans-grid">
-              {catalog.plans.map((plan) => {
-                const isProcessingThis = processingPlan === plan.planCode || (verifyingPayment && processingPlan === plan.planCode);
-                const displayPrice = plan.priceINR ? `₹${plan.priceINR}` : `₹99`;
-                const pricePeriod =
-                  plan.planCode === "PRO_MONTHLY"
-                    ? "/ month"
-                    : plan.planCode === "PRO_ANNUAL"
-                    ? "/ year"
-                    : "one-time";
-
-                return (
-                  <div key={plan.id} className={`plan-card ${plan.badge === "Popular" ? "featured" : ""}`}>
-                    {plan.badge && <div className="plan-badge-tag">{plan.badge}</div>}
-                    <h3 className="plan-name">{plan.name}</h3>
-                    <p className="plan-desc">{plan.description}</p>
-                    <div className="plan-price">
-                      <span className="price-amount">{displayPrice}</span>
-                      <span className="price-period">{pricePeriod}</span>
-                    </div>
-
-                    <ul className="plan-features">
-                      {plan.features.map((f, i) => (
-                        <li key={i}>
-                          <CheckIcon size={14} className="feature-check" />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    {plan.isCurrentPlan ? (
-                      <button type="button" className="plan-btn current" disabled>
-                        <CheckIcon size={16} />
-                        <span>Current Active Plan</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="plan-btn unlock"
-                        onClick={() => handleRazorpaySubscribe(plan)}
-                        disabled={isProcessingThis || verifyingPayment}
-                      >
-                        {isProcessingThis ? (
-                          <>
-                            <LoaderIcon size={16} />
-                            <span>{verifyingPayment ? "Verifying..." : "Opening Checkout..."}</span>
-                          </>
-                        ) : (
-                          <>
-                            <SparklesIcon size={16} />
-                            <span>Subscribe with Razorpay</span>
-                          </>
-                        )}
-                      </button>
-                    )}
+            <div>
+              <div style={{
+                background: "rgba(168, 85, 247, 0.08)",
+                border: "1px solid rgba(168, 85, 247, 0.25)",
+                borderRadius: "12px",
+                padding: "16px 20px",
+                marginBottom: "24px",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                color: "#e2e8f0"
+              }}>
+                <SparklesIcon size={24} style={{ color: "#c084fc", flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "15px", color: "#f3e8ff" }}>
+                    ANOY Pro Subscriptions — Coming Soon
                   </div>
-                );
-              })}
+                  <div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "2px" }}>
+                    Paid memberships with Razorpay checkout are currently being finalized. Free accounts have full access to social features, feed, communities, and themes!
+                  </div>
+                </div>
+              </div>
+
+              <div className="plans-grid">
+                {catalog.plans.map((plan) => {
+                  const displayPrice = plan.priceINR ? `₹${plan.priceINR}` : `₹99`;
+                  const pricePeriod =
+                    plan.planCode === "PRO_MONTHLY"
+                      ? "/ month"
+                      : plan.planCode === "PRO_ANNUAL"
+                      ? "/ year"
+                      : "one-time";
+
+                  return (
+                    <div key={plan.id} className={`plan-card ${plan.badge === "Popular" ? "featured" : ""}`}>
+                      <div className="plan-badge-tag" style={{ background: "linear-gradient(135deg, #a855f7, #6366f1)" }}>
+                        COMING SOON
+                      </div>
+                      <h3 className="plan-name">{plan.name}</h3>
+                      <p className="plan-desc">{plan.description}</p>
+                      <div className="plan-price">
+                        <span className="price-amount">{displayPrice}</span>
+                        <span className="price-period">{pricePeriod}</span>
+                      </div>
+
+                      <ul className="plan-features">
+                        {plan.features.map((f, i) => (
+                          <li key={i}>
+                            <CheckIcon size={14} className="feature-check" />
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {plan.isCurrentPlan ? (
+                        <button type="button" className="plan-btn current" disabled>
+                          <CheckIcon size={16} />
+                          <span>Current Active Plan</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="plan-btn unlock"
+                          onClick={() => handleRazorpaySubscribe(plan)}
+                          style={{
+                            background: "rgba(168, 85, 247, 0.15)",
+                            color: "#c084fc",
+                            border: "1px solid rgba(168, 85, 247, 0.3)",
+                            cursor: "pointer"
+                          }}
+                        >
+                          <SparklesIcon size={16} />
+                          <span>Coming Soon</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
