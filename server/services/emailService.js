@@ -1,50 +1,23 @@
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
 // In-memory capture for tests (NODE_ENV === "test")
 const testInbox = [];
 
 /**
- * Creates and returns a Nodemailer transporter configured via environment variables.
+ * Creates and returns a Resend client instance using RESEND_API_KEY.
  */
-const createTransporter = () => {
-    // If running in test environment, never connect to real SMTP
+const getResendClient = () => {
+    // If running in test environment, never connect to real Resend API
     if (process.env.NODE_ENV === "test") {
         return null;
     }
 
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
-    const smtpSecure = process.env.SMTP_SECURE === "true" || smtpPort === 465;
-    const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
-    const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
-    const emailService = process.env.EMAIL_SERVICE;
-
-    if (smtpHost) {
-        return nodemailer.createTransport({
-            host: smtpHost,
-            port: smtpPort,
-            secure: smtpSecure,
-            auth: {
-                user: smtpUser,
-                pass: smtpPass
-            },
-            tls: {
-                rejectUnauthorized: process.env.NODE_ENV === "production"
-            }
-        });
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+        return null;
     }
 
-    if (emailService || smtpUser) {
-        return nodemailer.createTransport({
-            service: emailService || "gmail",
-            auth: {
-                user: smtpUser,
-                pass: smtpPass
-            }
-        });
-    }
-
-    return null;
+    return new Resend(apiKey);
 };
 
 /**
@@ -193,12 +166,12 @@ const getVerificationEmailTemplate = (otp, username = "there") => {
 };
 
 /**
- * Sends a transactional email.
+ * Sends a transactional email using the Resend HTTPS API.
  * @param {object} options - { to, subject, html, text }
- * @returns {Promise<object>} - Nodemailer send result or mock status.
+ * @returns {Promise<object>} - Send result or mock status.
  */
 const sendEmail = async ({ to, subject, html, text }) => {
-    // In test environment, capture email in-memory and never connect to external SMTP
+    // In test environment, capture email in-memory and never connect to external API
     if (process.env.NODE_ENV === "test") {
         const capturedEmail = {
             to,
@@ -216,31 +189,37 @@ const sendEmail = async ({ to, subject, html, text }) => {
         };
     }
 
-    const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER || '"ANOY" <noreply@anoyy.tech>';
-    const transporter = createTransporter();
+    const fromAddress = process.env.EMAIL_FROM || '"ANOY" <noreply@anoyy.tech>';
+    const resend = getResendClient();
 
-    if (!transporter) {
+    if (!resend) {
         if (process.env.NODE_ENV !== "production") {
-            console.warn(`[emailService] SMTP is not configured. Email to ${to} was not dispatched via network.`);
+            console.warn(`[emailService] RESEND_API_KEY is not configured. Email to ${to} was not dispatched via network.`);
         }
         return {
             delivered: false,
             simulated: true,
-            message: "SMTP not configured"
+            message: "RESEND_API_KEY not configured"
         };
     }
 
     try {
-        const info = await transporter.sendMail({
+        const { data, error } = await resend.emails.send({
             from: fromAddress,
             to,
             subject,
             text,
             html
         });
+
+        if (error) {
+            console.error(`[emailService] Failed to send email to ${to}:`, error.message || error);
+            throw new Error(error.message || "Failed to send email via Resend");
+        }
+
         return {
             delivered: true,
-            messageId: info.messageId
+            messageId: data?.id
         };
     } catch (error) {
         console.error(`[emailService] Failed to send email to ${to}:`, error.message);
@@ -447,7 +426,7 @@ module.exports = {
     sendEmail,
     sendVerificationEmail,
     sendPasswordResetEmail,
-    createTransporter,
+    getResendClient,
     getSentEmails,
     getLastSentEmail,
     getSentEmailsFor,
