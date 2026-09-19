@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import { authApi } from "../services/api";
 import { LoaderIcon, AlertCircleIcon, CheckIcon } from "../components/Icons";
 import AnoyLogo from "../components/AnoyLogo";
 import ThemeBackground from "../components/ThemeBackground";
@@ -13,7 +14,7 @@ function Login() {
   const { login, register, verifyEmail, resendOTP } = useAuth();
   const { addToast } = useToast();
 
-  const [mode, setMode] = useState("login"); // 'login' | 'register' | 'verify'
+  const [mode, setMode] = useState("login"); // 'login' | 'register' | 'verify' | 'forgot' | 'reset'
 
   // Form states
   const [identifier, setIdentifier] = useState("");
@@ -21,6 +22,7 @@ function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
@@ -147,6 +149,107 @@ function Login() {
     }
   };
 
+  // Handle Forgot Password (Step 1) Submit
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    const emailToUse = email.trim().toLowerCase();
+    if (!emailToUse) {
+      setError("Please enter your registered email address");
+      return;
+    }
+    setError("");
+    setInfoMessage("");
+    setLoading(true);
+
+    try {
+      const res = await authApi.forgotPassword({ email: emailToUse });
+      setLoading(false);
+      if (res.data.success) {
+        addToast("Password reset code sent to your email", "info");
+        setInfoMessage(res.data.message || `If an account with this email exists, a 6-digit code has been sent.`);
+        setResendCooldown(60);
+        setOtp("");
+        setNewPassword("");
+        setMode("reset");
+      }
+    } catch (err) {
+      setLoading(false);
+      const msg = err.response?.data?.message || "Failed to send reset code. Please try again.";
+      setError(msg);
+      if (err.response?.data?.retryAfter) {
+        setResendCooldown(err.response.data.retryAfter);
+      }
+    }
+  };
+
+  // Handle Reset Password (Step 2) Submit
+  const handleResetSubmit = async (e) => {
+    e.preventDefault();
+    const emailToUse = email.trim().toLowerCase();
+    if (!emailToUse) {
+      setError("Email address is required");
+      return;
+    }
+    if (!otp.trim() || otp.trim().length !== 6) {
+      setError("Please enter the complete 6-digit verification code");
+      return;
+    }
+    if (!newPassword || newPassword.length < 8) {
+      setError("New password must be at least 8 characters long");
+      return;
+    }
+    setError("");
+    setInfoMessage("");
+    setLoading(true);
+
+    try {
+      const res = await authApi.resetPassword({
+        email: emailToUse,
+        otp: otp.trim(),
+        newPassword
+      });
+      setLoading(false);
+      if (res.data.success) {
+        addToast("Password reset successfully! Please sign in with your new password.", "success");
+        setInfoMessage("Password reset successfully. You can now sign in with your new password.");
+        setIdentifier(emailToUse);
+        setPassword("");
+        setOtp("");
+        setNewPassword("");
+        setMode("login");
+      }
+    } catch (err) {
+      setLoading(false);
+      setError(err.response?.data?.message || "Invalid or expired reset code. Please try again.");
+    }
+  };
+
+  // Handle Resend Reset OTP
+  const handleResendResetOtp = async () => {
+    const emailToUse = email.trim().toLowerCase();
+    if (resendCooldown > 0 || resendLoading || !emailToUse) return;
+
+    setError("");
+    setResendLoading(true);
+
+    try {
+      const res = await authApi.forgotPassword({ email: emailToUse });
+      setResendLoading(false);
+      if (res.data.success) {
+        addToast("Verification code resent! Please check your inbox.", "success");
+        setInfoMessage(res.data.message || `A fresh 6-digit code has been sent to ${emailToUse}`);
+        setResendCooldown(60);
+        setOtp("");
+      }
+    } catch (err) {
+      setResendLoading(false);
+      setError(err.response?.data?.message || "Failed to resend reset code");
+      if (err.response?.data?.retryAfter) {
+        setResendCooldown(err.response.data.retryAfter);
+      }
+    }
+  };
+
   return (
     <div className="anoy-app-shell">
       <ThemeBackground />
@@ -165,16 +268,20 @@ function Login() {
                 {mode === "login" && "Welcome to ANOY"}
                 {mode === "register" && "Join the Network"}
                 {mode === "verify" && "Verify Your Email"}
+                {mode === "forgot" && "Reset Password"}
+                {mode === "reset" && "Set New Password"}
               </h1>
               <p className="auth-subtitle">
                 {mode === "login" && "Sign in to access your personalized feed"}
                 {mode === "register" && "Create an account to connect with creators"}
                 {mode === "verify" && `Enter the 6-digit OTP sent to ${email}`}
+                {mode === "forgot" && "Enter your email to receive a 6-digit password reset code"}
+                {mode === "reset" && `Enter the 6-digit code sent to ${email} and your new password`}
               </p>
             </div>
 
             {/* Tab Switcher (Login / Register) */}
-            {mode !== "verify" && (
+            {(mode === "login" || mode === "register") && (
               <div className="auth-tabs" role="tablist">
                 <button
                   type="button"
@@ -238,7 +345,32 @@ function Login() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="password">Password</label>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label htmlFor="password" style={{ margin: 0 }}>Password</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("forgot");
+                        setError("");
+                        setInfoMessage("");
+                        if (identifier && identifier.includes("@")) {
+                          setEmail(identifier.trim().toLowerCase());
+                        }
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--primary)",
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        padding: 0
+                      }}
+                      aria-label="Forgot password?"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <input
                     id="password"
                     type="password"
@@ -257,6 +389,141 @@ function Login() {
                 >
                   {loading ? <LoaderIcon size={18} /> : "Sign In"}
                 </button>
+              </form>
+            )}
+
+            {/* FORGOT PASSWORD FORM (STEP 1) */}
+            {mode === "forgot" && (
+              <form onSubmit={handleForgotSubmit} className="auth-form">
+                <div className="form-group">
+                  <label htmlFor="forgot-email">Registered Email address</label>
+                  <input
+                    id="forgot-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoFocus
+                    autoComplete="email"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="auth-submit-btn"
+                  disabled={loading || !email.trim()}
+                >
+                  {loading ? <LoaderIcon size={18} /> : "Send Reset Code"}
+                </button>
+
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--border-color)" }}>
+                  <button
+                    type="button"
+                    style={{ color: "var(--text-dim)", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", padding: "4px 8px" }}
+                    onClick={() => {
+                      setMode("login");
+                      setError("");
+                      setInfoMessage("");
+                    }}
+                  >
+                    ← Back to Sign In
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* RESET PASSWORD FORM (STEP 2) */}
+            {mode === "reset" && (
+              <form onSubmit={handleResetSubmit} className="auth-form">
+                <div className="form-group">
+                  <label htmlFor="reset-email">Email</label>
+                  <input
+                    id="reset-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label htmlFor="reset-otp-code" style={{ margin: 0 }}>6-Digit Reset Code</label>
+                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Expires in 10 mins</span>
+                  </div>
+                  <div className="otp-box-container">
+                    <input
+                      id="reset-otp-code"
+                      type="text"
+                      className="otp-input"
+                      placeholder="------"
+                      maxLength={6}
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="reset-new-password">New Password (min 8 characters)</label>
+                  <input
+                    id="reset-new-password"
+                    type="password"
+                    placeholder="At least 8 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    minLength={8}
+                    required
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="auth-submit-btn"
+                  disabled={loading || otp.trim().length !== 6 || newPassword.length < 8}
+                >
+                  {loading ? <LoaderIcon size={18} /> : "Reset Password & Sign In"}
+                </button>
+
+                {/* Resend Code & Back to Sign In */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border-color)" }}>
+                  <button
+                    type="button"
+                    onClick={handleResendResetOtp}
+                    disabled={resendCooldown > 0 || resendLoading}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: resendCooldown > 0 ? "var(--text-dim)" : "var(--primary)",
+                      fontSize: 13,
+                      cursor: resendCooldown > 0 ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: 0
+                    }}
+                  >
+                    {resendLoading && <LoaderIcon size={14} />}
+                    {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend reset code"}
+                  </button>
+
+                  <button
+                    type="button"
+                    style={{ color: "var(--text-dim)", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+                    onClick={() => {
+                      setMode("login");
+                      setError("");
+                      setInfoMessage("");
+                    }}
+                  >
+                    ← Back to Sign In
+                  </button>
+                </div>
               </form>
             )}
 
