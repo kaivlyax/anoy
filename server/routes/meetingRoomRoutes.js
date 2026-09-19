@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router({ mergeParams: true });
 const auth = require("../middleware/authMiddleware");
+const { requireUnrestricted } = require("../middleware/restrictionMiddleware");
 const {
     getCommunityMeetingRooms,
     createMeetingRoom,
@@ -12,7 +13,7 @@ const {
 
 // Community Meeting Rooms listing and creation
 router.get("/", auth, getCommunityMeetingRooms);
-router.post("/", auth, createMeetingRoom);
+router.post("/", auth, requireUnrestricted, createMeetingRoom);
 
 // Single Meeting Room operations
 router.get("/:id", auth, getMeetingRoom);

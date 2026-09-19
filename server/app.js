@@ -19,6 +19,7 @@ const meetingRoomRoutes = require("./routes/meetingRoomRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const settingsRoutes = require("./routes/settingsRoutes");
 const aiRoutes = require("./routes/aiRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.use("/api/v1/meeting-rooms", meetingRoomRoutes);
 app.use("/api/v1/study-rooms", meetingRoomRoutes);
 app.use("/api/v1/settings", settingsRoutes);
 app.use("/api/v1/ai", aiRoutes);
+app.use("/api/v1/admin", adminRoutes);
 
 
 app.get("/", (req, res) => {

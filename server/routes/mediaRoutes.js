@@ -4,6 +4,7 @@ const { upload } = require("../config/cloudinary");
 const { uploadImage } = require("../controllers/mediaController");
 const protect = require("../middleware/authMiddleware");
 const { checkIsPro } = require("../middleware/premiumMiddleware");
+const { requireUnrestricted } = require("../middleware/restrictionMiddleware");
 
 // Custom wrapper to catch Multer errors cleanly and support multiple field names ("image", "file", "media")
 const handleUpload = (req, res, next) => {
@@ -28,6 +29,6 @@ const handleUpload = (req, res, next) => {
     });
 };
 
-router.post("/upload", protect, checkIsPro, handleUpload, uploadImage);
+router.post("/upload", protect, requireUnrestricted, checkIsPro, handleUpload, uploadImage);
 
 module.exports = router;

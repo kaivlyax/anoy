@@ -11,6 +11,7 @@ const MeetingRoom = require("./models/MeetingRoom");
 const StudyRoom = MeetingRoom;
 const Block = require("./models/Block");
 const Follow = require("./models/Follow");
+const { isUserRestricted } = require("./middleware/restrictionMiddleware");
 
 // In-memory mapping: userId (string) -> Set of socket IDs
 const userSockets = new Map();
@@ -194,6 +195,22 @@ const initSocket = (httpServer) => {
                 const conversation = await Conversation.findById(conversationId);
                 if (!conversation) {
                     if (callback) callback({ success: false, message: "Conversation not found" });
+                    return;
+                }
+
+                const senderIdentity = await Identity.findById(socket.user._id);
+                const restrictionStatus = isUserRestricted(senderIdentity);
+                if (restrictionStatus.restricted) {
+                    const expiryStr = restrictionStatus.expiresAt
+                        ? ` until ${new Date(restrictionStatus.expiresAt).toLocaleString("en-IN")}`
+                        : " permanently";
+                    if (callback) {
+                        callback({
+                            success: false,
+                            restricted: true,
+                            message: `Your account is currently restricted from sending messages${expiryStr}. Reason: ${restrictionStatus.reason}`
+                        });
+                    }
                     return;
                 }
 
@@ -488,6 +505,22 @@ const initSocket = (httpServer) => {
                 const community = await Community.findById(communityId);
                 if (!community) {
                     if (callback) callback({ success: false, message: "Community not found" });
+                    return;
+                }
+
+                const senderIdentity = await Identity.findById(socket.user._id);
+                const restrictionStatus = isUserRestricted(senderIdentity);
+                if (restrictionStatus.restricted) {
+                    const expiryStr = restrictionStatus.expiresAt
+                        ? ` until ${new Date(restrictionStatus.expiresAt).toLocaleString("en-IN")}`
+                        : " permanently";
+                    if (callback) {
+                        callback({
+                            success: false,
+                            restricted: true,
+                            message: `Your account is currently restricted from sending community messages${expiryStr}. Reason: ${restrictionStatus.reason}`
+                        });
+                    }
                     return;
                 }
 

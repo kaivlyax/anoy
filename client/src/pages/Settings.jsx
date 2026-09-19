@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { settingsApi, authApi } from "../services/api";
@@ -981,16 +981,24 @@ function Settings() {
                 <div className="settings-divider" />
 
                 <div className="about-legal-section">
-                  <h4>Terms & Guidelines</h4>
+                  <h4>Platform Policies & Legal Information</h4>
                   <p>
-                    ANOY is committed to creating a respectful, authentic, and safe environment for all learners.
-                    Hate speech, harassment, impersonation, or academic dishonesty will result in immediate account suspension.
+                    ANOY is built to foster safe, vibrant, and authentic campus communities. Read our full documentation:
                   </p>
 
-                  <h4 style={{ marginTop: 16 }}>Privacy & Data Rights</h4>
-                  <p>
-                    Your data belongs to you. ANOY never sells student personal information to third parties.
-                    Uploaded media is securely stored and encrypted in transit.
+                  <div className="about-legal-links-row" style={{ display: "flex", gap: "12px", marginTop: "12px", flexWrap: "wrap" }}>
+                    <Link to="/privacy" className="settings-legal-button">
+                      <ShieldIcon size={16} />
+                      <span>Privacy Policy</span>
+                    </Link>
+                    <Link to="/terms" className="settings-legal-button">
+                      <LockIcon size={16} />
+                      <span>Terms of Service</span>
+                    </Link>
+                  </div>
+
+                  <p className="legal-pilot-disclaimer" style={{ marginTop: "16px", fontSize: "12px", color: "var(--text-muted)" }}>
+                    ANOY is currently in pilot campus deployment. Institutional policy adaptation and formal compliance review are conducted in collaboration with university administrators.
                   </p>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 const express = require("express");
 const protect = require("../middleware/authMiddleware");
+const { requireUnrestricted } = require("../middleware/restrictionMiddleware");
 const {
     getUserConversations,
     getOrCreateConversation,
@@ -19,11 +20,11 @@ router.get("/unread-count", getUnreadMessagesCount);
 
 // Conversation list and creation
 router.get("/", getUserConversations);
-router.post("/", getOrCreateConversation);
+router.post("/", requireUnrestricted, getOrCreateConversation);
 
 // Messages in a conversation
 router.get("/:id/messages", getConversationMessages);
-router.post("/:id/messages", sendMessage);
+router.post("/:id/messages", requireUnrestricted, sendMessage);
 router.delete("/:id/messages/:messageId", deleteMessage);
 
 module.exports = router;

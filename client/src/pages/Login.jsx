@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { LoaderIcon, AlertCircleIcon, CheckIcon } from "../components/Icons";
@@ -306,6 +306,17 @@ function Login() {
                   />
                 </div>
 
+                <p className="auth-legal-consent">
+                  By registering, you agree to our{" "}
+                  <Link to="/terms" className="auth-legal-link" target="_blank" rel="noopener noreferrer">
+                    Terms of Service
+                  </Link>{" "}
+                  and{" "}
+                  <Link to="/privacy" className="auth-legal-link" target="_blank" rel="noopener noreferrer">
+                    Privacy Policy
+                  </Link>.
+                </p>
+
                 <button
                   type="submit"
                   className="auth-submit-btn"
@@ -395,11 +406,18 @@ function Login() {
               </form>
             )}
 
-            {/* Bottom Card Footer with Bharat Pride Badge */}
-            <div style={{ textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border-color)" }}>
-              <span style={{ fontSize: 12, color: "var(--text-dim)", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span>🇮🇳</span> Built for Bharat, By Students
-              </span>
+            {/* Bottom Card Footer with Bharat Pride Badge & Legal Links */}
+            <div className="auth-footer-links">
+              <div className="auth-footer-legal-row">
+                <Link to="/privacy" className="auth-footer-legal-link">Privacy Policy</Link>
+                <span>&bull;</span>
+                <Link to="/terms" className="auth-footer-legal-link">Terms of Service</Link>
+              </div>
+              <div style={{ textAlign: "center", marginTop: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--text-dim)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span>🇮🇳</span> Built for Bharat, By Students
+                </span>
+              </div>
             </div>
           </div>
         </div>

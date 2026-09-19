@@ -5,7 +5,7 @@ import { SocketProvider } from "./context/SocketContext";
 import Sidebar from "./components/Sidebar";
 import RightSidebar from "./components/RightSidebar";
 import { MobileNavbar, MobileBottomNav } from "./components/Navbar";
-import { LoaderIcon } from "./components/Icons";
+import { LoaderIcon, AlertCircleIcon } from "./components/Icons";
 
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
@@ -19,7 +19,11 @@ import CommunityDetail from "./pages/CommunityDetail";
 import MeetingRoomDetail from "./pages/MeetingRoomDetail";
 import AnoyAI from "./pages/AnoyAI";
 import Settings from "./pages/Settings";
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminRoute from "./components/AdminRoute";
 import Login from "./pages/Login";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
 import ThemeBackground from "./components/ThemeBackground";
 
 import "./App.css";
@@ -54,12 +58,14 @@ function ProtectedRoute({ children }) {
 
 // Authenticated Main Layout
 function AppLayout() {
+  const { profile } = useAuth();
   const location = useLocation();
   const isWideLayout =
     location.pathname.startsWith("/messages") ||
     location.pathname.startsWith("/ai") ||
     location.pathname.includes("/meeting-rooms/") ||
-    location.pathname.startsWith("/study-rooms");
+    location.pathname.startsWith("/study-rooms") ||
+    location.pathname.startsWith("/admin");
 
   return (
     <div className="anoy-app-shell">
@@ -67,6 +73,18 @@ function AppLayout() {
       <ThemeBackground />
 
       <div className="anoy-app-content">
+        {/* Global Platform Interaction Restriction Banner */}
+        {profile?.restriction?.isRestricted && (!profile.restriction.expiresAt || new Date(profile.restriction.expiresAt) > new Date()) && (
+          <div className="platform-restriction-banner">
+            <div className="restriction-banner-inner">
+              <AlertCircleIcon size={18} className="banner-icon" />
+              <div className="banner-text">
+                <strong>Account Interaction Restricted:</strong> Your account is currently in read-only mode ({profile.restriction.expiresAt ? `until ${new Date(profile.restriction.expiresAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "permanently"}). You cannot post, comment, like, react, or send messages. <em>Reason: {profile.restriction.reason}</em>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="app-container">
           {/* Mobile Top Header */}
           <MobileNavbar />
@@ -89,11 +107,21 @@ function AppLayout() {
               <Route path="/store" element={<Store />} />
               <Route path="/pro" element={<Store />} />
               <Route path="/settings" element={<Settings />} />
+              <Route
+                path="/admin"
+                element={
+                  <AdminRoute>
+                    <AdminDashboard />
+                  </AdminRoute>
+                }
+              />
               <Route path="/communities" element={<Communities />} />
               <Route path="/communities/:slug" element={<CommunityDetail />} />
               <Route path="/communities/:slug/meeting-rooms/:roomId" element={<MeetingRoomDetail />} />
               <Route path="/study-rooms" element={<Navigate to="/communities" replace />} />
               <Route path="/study-rooms/:roomId" element={<Navigate to="/communities" replace />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
 
@@ -116,8 +144,10 @@ function App() {
         <SocketProvider>
           <ToastProvider>
             <Routes>
-              {/* Public Auth Page */}
+              {/* Public Auth & Legal Pages */}
               <Route path="/login" element={<Login />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
 
               {/* Protected App Routes */}
               <Route

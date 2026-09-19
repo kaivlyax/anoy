@@ -13,7 +13,8 @@ import {
   LogOutIcon,
   PlusIcon,
   SparklesIcon,
-  SettingsIcon
+  SettingsIcon,
+  ShieldIcon
 } from "./Icons";
 import NotificationBadge from "./NotificationBadge";
 
@@ -170,6 +171,19 @@ function Sidebar({ onOpenPostComposer }) {
             <SettingsIcon size={21} />
             <span>Settings</span>
           </NavLink>
+
+          {(user?.role === "ADMIN" || profile?.role === "ADMIN") && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `nav-item nav-item-admin ${isActive ? "active" : ""}`
+              }
+              aria-label="Admin Dashboard"
+            >
+              <ShieldIcon size={21} style={{ color: "#ef4444" }} />
+              <span style={{ color: "#ef4444", fontWeight: 700 }}>Admin</span>
+            </NavLink>
+          )}
         </nav>
 
         {/* Post Quick Action */}

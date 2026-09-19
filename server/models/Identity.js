@@ -61,6 +61,57 @@ const identitySchema = new mongoose.Schema(
             default: "PENDING"
         },
 
+        role: {
+            type: String,
+            enum: [
+                "USER",
+                "MODERATOR",
+                "SUPPORT",
+                "ADMIN"
+            ],
+            default: "USER"
+        },
+
+        banReason: {
+            type: String,
+            default: null
+        },
+
+        bannedAt: {
+            type: Date,
+            default: null
+        },
+
+        bannedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Identity",
+            default: null
+        },
+
+        restriction: {
+            isRestricted: {
+                type: Boolean,
+                default: false
+            },
+            reason: {
+                type: String,
+                default: null
+            },
+            restrictedAt: {
+                type: Date,
+                default: null
+            },
+            expiresAt: {
+                type: Date,
+                default: null
+            },
+            restrictedBy: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Identity",
+                default: null
+            }
+        },
+
 
         verificationOTP: {
             type: String

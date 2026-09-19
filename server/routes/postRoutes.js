@@ -27,14 +27,14 @@ const {
 } = require("../controllers/commentController");
 
 
-const protect =
-    require("../middleware/authMiddleware");
-
+const protect = require("../middleware/authMiddleware");
+const { requireUnrestricted } = require("../middleware/restrictionMiddleware");
 
 // CREATE POST
 router.post(
     "/",
     protect,
+    requireUnrestricted,
     createPost
 );
 
@@ -57,23 +57,24 @@ router.get(
     getPersonalizedFeed
 );
 
-
 router.post(
     "/:postId/like",
     protect,
+    requireUnrestricted,
     likePost
 );
-
 
 router.delete(
     "/:postId/like",
     protect,
+    requireUnrestricted,
     unlikePost
 );
 
 router.post(
     "/:postId/comments",
     protect,
+    requireUnrestricted,
     createComment
 );
 
@@ -85,6 +86,7 @@ router.get(
 router.patch(
     "/comments/:id",
     protect,
+    requireUnrestricted,
     updateComment
 );
 
@@ -99,19 +101,17 @@ router.get(
     getPostById
 );
 
-
 router.patch(
     "/:id",
     protect,
+    requireUnrestricted,
     updatePost
 );
-
 
 router.delete(
     "/:id",
     protect,
     deletePost
 );
-
 
 module.exports = router;

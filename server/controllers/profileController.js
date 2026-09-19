@@ -2,6 +2,7 @@ const Profile = require("../models/Profile");
 const Identity = require("../models/Identity");
 const Follow = require("../models/Follow");
 const { isProfilePro } = require("../middleware/premiumMiddleware");
+const { isUserRestricted } = require("../middleware/restrictionMiddleware");
 
 // =====================================================
 // CREATE PROFILE
@@ -131,6 +132,8 @@ const getMyProfile = async (req, res) => {
 
         const profObj = profile.toObject();
         profObj.isPro = validPro;
+        profObj.role = req.user?.role || "USER";
+        profObj.restriction = isUserRestricted(req.user);
 
         return res.status(200).json({
             success: true,

@@ -36,6 +36,8 @@ const {
     deleteCommunityMessage
 } = require("../controllers/communityChatController");
 
+const { requireUnrestricted } = require("../middleware/restrictionMiddleware");
+
 // Public list & read
 router.get("/", protect, getCommunities);
 router.get("/:slugOrId", protect, getCommunity);
@@ -43,7 +45,7 @@ router.get("/:id/members", protect, attachCommunity, getCommunityMembers);
 router.get("/:id/boosters", protect, attachCommunity, getBoosters);
 
 // Create community
-router.post("/", protect, createCommunity);
+router.post("/", protect, requireUnrestricted, createCommunity);
 
 // Membership
 router.post("/:id/join", protect, attachCommunity, joinCommunity);
@@ -55,7 +57,7 @@ router.get("/:id/reports", protect, requireCommunityModerator, getCommunityRepor
 router.put("/:id/reports/:reportId", protect, requireCommunityModerator, resolveCommunityReport);
 
 // Boost Community (Requires Pro!)
-router.post("/:id/boost", protect, requirePro, attachCommunity, boostCommunity);
+router.post("/:id/boost", protect, requireUnrestricted, requirePro, attachCommunity, boostCommunity);
 
 // Management & Moderation
 router.put("/:id", protect, requireCommunityOwner, updateCommunity);
@@ -68,12 +70,12 @@ router.get("/:id/banned", protect, requireCommunityModerator, getBannedMembers);
 router.get("/:id/moderation-logs", protect, requireCommunityModerator, getModerationLogs);
 
 // Community Decorations
-router.put("/:id/decorations", protect, requireCommunityOwner, updateCommunityDecorations);
-router.post("/:id/decorations/unlock", protect, requireCommunityOwner, unlockCommunityDecoration);
+router.put("/:id/decorations", protect, requireUnrestricted, requireCommunityOwner, updateCommunityDecorations);
+router.post("/:id/decorations/unlock", protect, requireUnrestricted, requireCommunityOwner, unlockCommunityDecoration);
 
 // Community Real-Time Chat & Channels
 router.get("/:id/messages", protect, getCommunityMessages);
-router.post("/:id/messages", protect, sendCommunityMessage);
+router.post("/:id/messages", protect, requireUnrestricted, sendCommunityMessage);
 router.delete("/:id/messages/:messageId", protect, deleteCommunityMessage);
 
 // Community Meeting Rooms

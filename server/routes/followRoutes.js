@@ -13,9 +13,8 @@ const {
     getFollowStatus
 } = require("../controllers/followController");
 
-const protect =
-    require("../middleware/authMiddleware");
-
+const protect = require("../middleware/authMiddleware");
+const { requireUnrestricted } = require("../middleware/restrictionMiddleware");
 
 router.get(
     "/requests",
@@ -26,16 +25,16 @@ router.get(
 router.post(
     "/requests/:username/accept",
     protect,
+    requireUnrestricted,
     acceptFollowRequest
 );
 
 router.post(
     "/requests/:username/reject",
     protect,
+    requireUnrestricted,
     rejectFollowRequest
 );
-
-
 
 router.get(
     "/:username/status",
@@ -43,16 +42,17 @@ router.get(
     getFollowStatus
 );
 
-
 router.post(
     "/:username",
     protect,
+    requireUnrestricted,
     followUser
 );
 
 router.delete(
     "/:username",
     protect,
+    requireUnrestricted,
     unfollowUser
 );
 

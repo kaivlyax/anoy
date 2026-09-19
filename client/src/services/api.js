@@ -210,4 +210,17 @@ export const searchApi = {
     api.get(`/search/posts?q=${encodeURIComponent(q)}&limit=${limit}`)
 };
 
+export const adminApi = {
+  getUsers: (params = {}) => api.get("/admin/users", { params }),
+  getUser: (id) => api.get(`/admin/users/${id}`),
+  getUserConversations: (userId) => api.get(`/admin/users/${userId}/conversations`),
+  banUser: (id, reason) => api.post(`/admin/users/${id}/ban`, { reason }),
+  unbanUser: (id, reason) => api.post(`/admin/users/${id}/unban`, { reason }),
+  restrictUser: (id, data) => api.post(`/admin/users/${id}/restrict`, data),
+  unrestrictUser: (id, data = {}) => api.post(`/admin/users/${id}/unrestrict`, data),
+  reviewPrivateMessages: (conversationId, reason, params = {}) =>
+    api.get(`/admin/conversations/${conversationId}/messages`, { params: { reason, ...params } }),
+  getAuditLogs: (params = {}) => api.get("/admin/audit-logs", { params })
+};
+
 export default api;
