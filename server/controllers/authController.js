@@ -445,7 +445,8 @@ const login = async (req, res) => {
             {
                 userId: user._id.toString(),
                 username: user.username,
-                tokenVersion: user.tokenVersion || 0
+                tokenVersion: user.tokenVersion || 0,
+                role: user.role || "USER"
             },
             process.env.JWT_SECRET,
             {
@@ -460,7 +461,8 @@ const login = async (req, res) => {
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                role: user.role || "USER"
             }
         });
 

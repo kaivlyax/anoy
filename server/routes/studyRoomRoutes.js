@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const protect = require("../middleware/authMiddleware");
+const { requireUnrestricted } = require("../middleware/restrictionMiddleware");
 const {
     getStudyRooms,
     getStudyRoomById,
@@ -14,7 +15,7 @@ const {
 router.use(protect);
 
 router.get("/", getStudyRooms);
-router.post("/", createStudyRoom);
+router.post("/", requireUnrestricted, createStudyRoom);
 router.get("/:id", getStudyRoomById);
 router.post("/:id/join", joinStudyRoom);
 router.post("/:id/leave", leaveStudyRoom);

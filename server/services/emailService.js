@@ -216,7 +216,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
         };
     }
 
-    const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER || '"ANOY Social" <no-reply@anoy.social>';
+    const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER || '"ANOY" <noreply@anoyy.tech>';
     const transporter = createTransporter();
 
     if (!transporter) {

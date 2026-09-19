@@ -249,20 +249,11 @@ function RightSidebar() {
       </div>
 
       {/* Mini Footer */}
-      <div
-        style={{
-          padding: "0 8px",
-          color: "var(--text-dim)",
-          fontSize: 12,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 10
-        }}
-      >
-        <span>© 2026 ANOY</span>
-        <span>Privacy</span>
-        <span>Terms</span>
-        <span>Explore</span>
+      <div className="right-sidebar-footer">
+        <span>&copy; {new Date().getFullYear()} ANOY</span>
+        <Link to="/privacy" className="footer-link">Privacy</Link>
+        <Link to="/terms" className="footer-link">Terms</Link>
+        <Link to="/explore" className="footer-link">Explore</Link>
       </div>
     </aside>
   );
