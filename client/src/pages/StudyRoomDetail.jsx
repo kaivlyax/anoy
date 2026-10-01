@@ -94,7 +94,7 @@ export default function StudyRoomDetail() {
   useEffect(() => {
     if (!socket || !isConnected || !roomId) return;
 
-    const manager = new WebRTCManager(socket, handleRemoteStream, handlePeerLeft);
+    const manager = new WebRTCManager(socket, handleRemoteStream, handlePeerLeft, "study_room:signal");
     webrtcManagerRef.current = manager;
 
     // Start local audio & video

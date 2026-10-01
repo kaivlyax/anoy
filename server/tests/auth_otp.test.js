@@ -1,6 +1,7 @@
 require("dotenv").config();
 const request = require("supertest");
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 const app = require("../app");
 const Identity = require("../models/Identity");
 const { hashOTP, compareOTP } = require("../utils/hashUtils");
@@ -516,6 +517,222 @@ describe("Email OTP Delivery & Security Suite", () => {
             expect(res.body.message).toMatch(/no active password reset request found/i);
 
             await Identity.deleteMany({ email: raceEmail });
+        });
+    });
+
+    describe("Unverified Account Registration Resumption (Bug #2 Fix)", () => {
+        const stuckEmail = "stuck_user@test.com";
+        const oldPassword = "OldStuckPassword123!";
+        const newPassword = "NewResumedPassword123!";
+
+        beforeEach(async () => {
+            await Identity.deleteMany({ email: { $in: [stuckEmail, "other_user@test.com"] } });
+        });
+
+        afterAll(async () => {
+            await Identity.deleteMany({ email: { $in: [stuckEmail, "other_user@test.com"] } });
+        });
+
+        test("Initial unverified registration leaves account in PENDING state", async () => {
+            const res = await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser",
+                    password: oldPassword
+                });
+
+            expect(res.statusCode).toBe(201);
+            expect(res.body.success).toBe(true);
+
+            const user = await Identity.findOne({ email: stuckEmail });
+            expect(user).toBeDefined();
+            expect(user.emailVerified).toBe(false);
+            expect(user.status).toBe("PENDING");
+            expect(user.verificationOTPHash).toBeDefined();
+        });
+
+        test("Resuming registration for unverified account succeeds and dispatches fresh OTP", async () => {
+            // First register
+            await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser",
+                    password: oldPassword
+                });
+
+            const initialUser = await Identity.findOne({ email: stuckEmail });
+            const initialOtpHash = initialUser.verificationOTPHash;
+
+            // User closes tab and registers again with updated password
+            const resumeRes = await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser",
+                    password: newPassword
+                });
+
+            expect(resumeRes.statusCode).toBe(200);
+            expect(resumeRes.body.success).toBe(true);
+            expect(resumeRes.body.message).toMatch(/verification code has been sent/i);
+
+            const updatedUser = await Identity.findOne({ email: stuckEmail });
+            expect(updatedUser.emailVerified).toBe(false);
+            expect(updatedUser.status).toBe("PENDING");
+            expect(updatedUser.verificationAttempts).toBe(0);
+            // OTP hash must be updated (old OTP invalidated)
+            expect(updatedUser.verificationOTPHash).toBeDefined();
+
+            // Password must be updated to new password
+            const isNewPassMatch = await bcrypt.compare(newPassword, updatedUser.passwordHash);
+            expect(isNewPassMatch).toBe(true);
+        });
+
+        test("Resuming registration allows changing username if new username is available", async () => {
+            await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser1",
+                    password: oldPassword
+                });
+
+            const resumeRes = await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser_updated",
+                    password: newPassword
+                });
+
+            expect(resumeRes.statusCode).toBe(200);
+            expect(resumeRes.body.success).toBe(true);
+
+            const updatedUser = await Identity.findOne({ email: stuckEmail });
+            expect(updatedUser.username).toBe("stuckuser_updated");
+        });
+
+        test("Resuming registration rejects if chosen username belongs to another user", async () => {
+            // Create another user
+            await Identity.create({
+                email: "other_user@test.com",
+                username: "takenusername",
+                passwordHash: "dummyhash",
+                emailVerified: true,
+                status: "ACTIVE"
+            });
+
+            // Create stuck user
+            await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser1",
+                    password: oldPassword
+                });
+
+            // Attempt to resume with taken username
+            const resumeRes = await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "takenusername",
+                    password: newPassword
+                });
+
+            expect(resumeRes.statusCode).toBe(400);
+            expect(resumeRes.body.success).toBe(false);
+            expect(resumeRes.body.message).toMatch(/username is already taken/i);
+        });
+
+        test("Registration attempt on already verified email is rejected to protect verified accounts", async () => {
+            // Mark user verified
+            await Identity.create({
+                email: stuckEmail,
+                username: "verifieduser",
+                passwordHash: "hashedpass",
+                emailVerified: true,
+                status: "ACTIVE"
+            });
+
+            const res = await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "verifieduser",
+                    password: newPassword
+                });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toMatch(/account with this email already exists/i);
+        });
+
+        test("Resumed registration completes verification and logs in with new password", async () => {
+            // 1. Initial register
+            await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser",
+                    password: oldPassword
+                });
+
+            // 2. Resume registration with new password
+            await request(app)
+                .post("/api/v1/auth/register")
+                .send({
+                    email: stuckEmail,
+                    username: "stuckuser",
+                    password: newPassword
+                });
+
+            // 3. Set known OTP for testing
+            const testOtp = "445566";
+            await Identity.updateOne(
+                { email: stuckEmail },
+                {
+                    $set: {
+                        verificationOTPHash: hashOTP(testOtp),
+                        verificationOTPExpiry: new Date(Date.now() + 10 * 60 * 1000)
+                    }
+                }
+            );
+
+            // 4. Verify OTP
+            const verifyRes = await request(app)
+                .post("/api/v1/auth/verify-email")
+                .send({
+                    email: stuckEmail,
+                    otp: testOtp
+                });
+
+            expect(verifyRes.statusCode).toBe(200);
+            expect(verifyRes.body.success).toBe(true);
+
+            // 5. Login with new password must succeed
+            const loginRes = await request(app)
+                .post("/api/v1/auth/login")
+                .send({
+                    identifier: stuckEmail,
+                    password: newPassword
+                });
+
+            expect(loginRes.statusCode).toBe(200);
+            expect(loginRes.body.success).toBe(true);
+            expect(loginRes.body.token).toBeDefined();
+
+            // 6. Login with old password must fail
+            const oldLoginRes = await request(app)
+                .post("/api/v1/auth/login")
+                .send({
+                    identifier: stuckEmail,
+                    password: oldPassword
+                });
+
+            expect(oldLoginRes.statusCode).toBe(401);
         });
     });
 });

@@ -190,4 +190,105 @@ describe("Meeting Rooms & Unified Search Inside Communities Suite", () => {
         expect(res.body.success).toBe(true);
         expect(res.body.users.length).toBeGreaterThanOrEqual(1);
     });
+
+    describe("WebRTC Signaling and State Synchronization Suite (Bug #1 Fix)", () => {
+        const http = require("http");
+        const ioClient = require("socket.io-client");
+        const { initSocket } = require("../socket");
+
+        let server, ioServer, port;
+        let socketClient1, socketClient2;
+
+        beforeAll(async () => {
+            server = http.createServer(app);
+            ioServer = initSocket(server);
+            await new Promise((resolve) => server.listen(0, resolve));
+            port = server.address().port;
+
+            socketClient1 = ioClient(`http://localhost:${port}`, {
+                auth: { token: ownerToken },
+                transports: ["websocket"]
+            });
+            socketClient2 = ioClient(`http://localhost:${port}`, {
+                auth: { token: memberToken },
+                transports: ["websocket"]
+            });
+
+            await Promise.all([
+                new Promise((res) => socketClient1.on("connect", res)),
+                new Promise((res) => socketClient2.on("connect", res))
+            ]);
+        });
+
+        afterAll(async () => {
+            if (socketClient1?.connected) socketClient1.disconnect();
+            if (socketClient2?.connected) socketClient2.disconnect();
+            if (server) {
+                await new Promise((res) => server.close(res));
+            }
+        });
+
+        it("socket join_meeting_room allows two users to join the same room and discover each other", async () => {
+            const join1 = await new Promise((resolve) => {
+                socketClient1.emit("join_meeting_room", { roomId: publicRoomId }, (ack) => resolve(ack));
+            });
+            expect(join1.success).toBe(true);
+
+            const userJoinedPromise = new Promise((resolve) => {
+                socketClient1.once("meeting_room:user_joined", (data) => resolve(data));
+            });
+
+            const join2 = await new Promise((resolve) => {
+                socketClient2.emit("join_meeting_room", { roomId: publicRoomId }, (ack) => resolve(ack));
+            });
+            expect(join2.success).toBe(true);
+            expect(join2.peers.some((p) => p.socketId === socketClient1.id)).toBe(true);
+
+            const joinedEvent = await userJoinedPromise;
+            expect(joinedEvent.socketId).toBe(socketClient2.id);
+        });
+
+        it("meeting_room:signal delivers to recipient on meeting_room:signal only (no double emission)", async () => {
+            let receivedMeetingSignals = 0;
+            let receivedStudySignals = 0;
+
+            const onMeetingSignal = () => { receivedMeetingSignals++; };
+            const onStudySignal = () => { receivedStudySignals++; };
+
+            socketClient2.on("meeting_room:signal", onMeetingSignal);
+            socketClient2.on("study_room:signal", onStudySignal);
+
+            socketClient1.emit("meeting_room:signal", {
+                toSocketId: socketClient2.id,
+                signalData: { type: "offer", sdp: "v=0\r\no=test 123 456 IN IP4 127.0.0.1" },
+                type: "offer"
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 150));
+
+            socketClient2.off("meeting_room:signal", onMeetingSignal);
+            socketClient2.off("study_room:signal", onStudySignal);
+
+            expect(receivedMeetingSignals).toBe(1);
+            expect(receivedStudySignals).toBe(0);
+        });
+
+        it("meeting_room:state_change delivers participant state change to room peers", async () => {
+            const statePromise = new Promise((resolve) => {
+                socketClient2.once("meeting_room:participant_state_changed", (data) => resolve(data));
+            });
+
+            socketClient1.emit("meeting_room:state_change", {
+                roomId: publicRoomId,
+                isMuted: true,
+                isVideoOff: true,
+                isScreenSharing: false
+            });
+
+            const stateEvent = await statePromise;
+            expect(stateEvent.socketId).toBe(socketClient1.id);
+            expect(stateEvent.isMuted).toBe(true);
+            expect(stateEvent.isVideoOff).toBe(true);
+        });
+    });
 });
