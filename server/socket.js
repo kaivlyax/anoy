@@ -817,13 +817,10 @@ const initSocket = (httpServer) => {
                 socket.to(roomKey).emit("meeting_room:user_left", leavePayload);
                 socket.to(legacyKey).emit("study_room:user_left", leavePayload);
 
-                const room = await MeetingRoom.findById(roomId);
-                if (room) {
-                    room.activeParticipants = room.activeParticipants.filter(
-                        (p) => !p.user.equals(socket.user._id)
-                    );
-                    await room.save();
-                }
+                await MeetingRoom.updateOne(
+                    { _id: roomId },
+                    { $pull: { activeParticipants: { user: socket.user._id } } }
+                ).catch(() => {});
 
                 if (callback) callback({ success: true });
             } catch (err) {
@@ -836,56 +833,80 @@ const initSocket = (httpServer) => {
         socket.on("leave_study_room", handleLeaveMeetingRoom);
 
         // WebRTC Signaling Relay
-        const handleSignal = (data) => {
+        socket.on("meeting_room:signal", (data) => {
             const { toSocketId, signalData, type } = data || {};
             if (!toSocketId) return;
 
-            const signalPayload = {
+            io.to(toSocketId).emit("meeting_room:signal", {
                 fromSocketId: socket.id,
                 user: socket.user,
                 signalData,
                 type
-            };
-            io.to(toSocketId).emit("meeting_room:signal", signalPayload);
-            io.to(toSocketId).emit("study_room:signal", signalPayload);
-        };
+            });
+        });
 
-        socket.on("meeting_room:signal", handleSignal);
-        socket.on("study_room:signal", handleSignal);
+        socket.on("study_room:signal", (data) => {
+            const { toSocketId, signalData, type } = data || {};
+            if (!toSocketId) return;
+
+            io.to(toSocketId).emit("study_room:signal", {
+                fromSocketId: socket.id,
+                user: socket.user,
+                signalData,
+                type
+            });
+        });
 
         // Participant State Changes (Mute / Camera / Screen Share)
-        const handleStateChange = async (data) => {
+        const updateParticipantStateInDb = async (roomId, isMuted, isVideoOff, isScreenSharing) => {
+            try {
+                const updateFields = {};
+                if (typeof isMuted === "boolean") updateFields["activeParticipants.$.isMuted"] = isMuted;
+                if (typeof isVideoOff === "boolean") updateFields["activeParticipants.$.isVideoOff"] = isVideoOff;
+                if (typeof isScreenSharing === "boolean") updateFields["activeParticipants.$.isScreenSharing"] = isScreenSharing;
+
+                if (Object.keys(updateFields).length > 0) {
+                    await MeetingRoom.updateOne(
+                        { _id: roomId, "activeParticipants.user": socket.user._id },
+                        { $set: updateFields }
+                    );
+                }
+            } catch (e) {
+                console.warn("meeting_room:state_change db update error:", e);
+            }
+        };
+
+        socket.on("meeting_room:state_change", async (data) => {
             const { roomId, isMuted, isVideoOff, isScreenSharing } = data || {};
             if (!roomId) return;
 
             const roomKey = `meeting_room:${roomId}`;
-            const legacyKey = `study_room:${roomId}`;
-            const statePayload = {
+            socket.to(roomKey).emit("meeting_room:participant_state_changed", {
                 socketId: socket.id,
                 userId: socket.user.id,
                 isMuted,
                 isVideoOff,
                 isScreenSharing
-            };
-            socket.to(roomKey).emit("meeting_room:participant_state_changed", statePayload);
-            socket.to(legacyKey).emit("study_room:participant_state_changed", statePayload);
+            });
 
-            // Update in DB
-            MeetingRoom.findById(roomId).then((room) => {
-                if (room) {
-                    const p = room.activeParticipants.find((item) => item.user.equals(socket.user._id));
-                    if (p) {
-                        if (typeof isMuted === "boolean") p.isMuted = isMuted;
-                        if (typeof isVideoOff === "boolean") p.isVideoOff = isVideoOff;
-                        if (typeof isScreenSharing === "boolean") p.isScreenSharing = isScreenSharing;
-                        room.save();
-                    }
-                }
-            }).catch((e) => console.warn("meeting_room:state_change db update error:", e));
-        };
+            await updateParticipantStateInDb(roomId, isMuted, isVideoOff, isScreenSharing);
+        });
 
-        socket.on("meeting_room:state_change", handleStateChange);
-        socket.on("study_room:state_change", handleStateChange);
+        socket.on("study_room:state_change", async (data) => {
+            const { roomId, isMuted, isVideoOff, isScreenSharing } = data || {};
+            if (!roomId) return;
+
+            const roomKey = `study_room:${roomId}`;
+            socket.to(roomKey).emit("study_room:participant_state_changed", {
+                socketId: socket.id,
+                userId: socket.user.id,
+                isMuted,
+                isVideoOff,
+                isScreenSharing
+            });
+
+            await updateParticipantStateInDb(roomId, isMuted, isVideoOff, isScreenSharing);
+        });
 
         // =====================================================
         // DISCONNECT
@@ -904,14 +925,10 @@ const initSocket = (httpServer) => {
                     socket.to(roomKey).emit("meeting_room:user_left", leavePayload);
                     socket.to(legacyKey).emit("study_room:user_left", leavePayload);
 
-                    MeetingRoom.findById(rId).then((room) => {
-                        if (room) {
-                            room.activeParticipants = room.activeParticipants.filter(
-                                (p) => !p.user.equals(socket.user._id)
-                            );
-                            room.save();
-                        }
-                    }).catch(() => {});
+                    MeetingRoom.updateOne(
+                        { _id: rId },
+                        { $pull: { activeParticipants: { user: socket.user._id } } }
+                    ).catch(() => {});
                 }
                 socketMeetingRooms.delete(socket.id);
             }

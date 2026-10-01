@@ -96,7 +96,7 @@ export default function MeetingRoomDetail() {
   useEffect(() => {
     if (!socket || !isConnected || !roomId) return;
 
-    const manager = new WebRTCManager(socket, handleRemoteStream, handlePeerLeft);
+    const manager = new WebRTCManager(socket, handleRemoteStream, handlePeerLeft, "meeting_room:signal");
     webrtcManagerRef.current = manager;
 
     // Start local audio & video
@@ -167,7 +167,7 @@ export default function MeetingRoomDetail() {
 
       // Answer side connection
       manager.createPeerConnection(socketId, false);
-      addToast(`${joinedUser?.displayName || joinedUser?.username || "A student"} joined`, "info");
+      addToast(`${joinedUser?.displayName || joinedUser?.username || "A participant"} joined`, "info");
     };
 
     // Socket Event: User left
@@ -207,23 +207,12 @@ export default function MeetingRoomDetail() {
     socket.on("meeting_room:signal", handleSignal);
     socket.on("meeting_room:participant_state_changed", handleStateChange);
 
-    // Also support study room alias events for backwards compatibility
-    socket.on("study_room:user_joined", handleUserJoined);
-    socket.on("study_room:user_left", handleUserLeft);
-    socket.on("study_room:signal", handleSignal);
-    socket.on("study_room:participant_state_changed", handleStateChange);
-
     return () => {
       socket.emit("leave_meeting_room", { roomId });
       socket.off("meeting_room:user_joined", handleUserJoined);
       socket.off("meeting_room:user_left", handleUserLeft);
       socket.off("meeting_room:signal", handleSignal);
       socket.off("meeting_room:participant_state_changed", handleStateChange);
-
-      socket.off("study_room:user_joined", handleUserJoined);
-      socket.off("study_room:user_left", handleUserLeft);
-      socket.off("study_room:signal", handleSignal);
-      socket.off("study_room:participant_state_changed", handleStateChange);
 
       manager.cleanupAll();
     };

@@ -12,13 +12,21 @@ export default function VideoTile({
   isScreenSharing = false,
   isSpeaking = false
 }) {
-  const videoRef = useRef(null);
-
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+    const videoEl = videoRef.current;
+    if (videoEl && stream) {
+      if (videoEl.srcObject !== stream) {
+        videoEl.srcObject = stream;
+      }
+      const playPromise = videoEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          // Autoplay was prevented or interrupted (e.g., track transition)
+          console.debug("[VideoTile] Autoplay notice:", err?.message || err);
+        });
+      }
     }
-  }, [stream]);
+  }, [stream, isVideoOff]);
 
   const displayName = user?.displayName || user?.username || "Student";
   const avatarLetter = (displayName || "S").charAt(0).toUpperCase();

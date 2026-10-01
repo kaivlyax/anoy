@@ -93,9 +93,63 @@ const register = async (req, res) => {
         });
 
         if (existingEmail) {
-            return res.status(400).json({
-                success: false,
-                message: "An account with this email already exists. Please sign in or reset your password."
+            // If already verified, reject to protect verified accounts
+            if (existingEmail.emailVerified) {
+                return res.status(400).json({
+                    success: false,
+                    message: "An account with this email already exists. Please sign in or reset your password."
+                });
+            }
+
+            // Block banned or deleted accounts from resuming
+            if (existingEmail.status === "BANNED" || existingEmail.status === "DELETED") {
+                return res.status(403).json({
+                    success: false,
+                    message: "This account cannot be registered at this time."
+                });
+            }
+
+            // Check if desired username is already taken by another account
+            const existingUsername = await Identity.findOne({
+                $or: [
+                    { username: normalizedUsername },
+                    { username: new RegExp(`^${normalizedUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+                ]
+            });
+
+            if (existingUsername && existingUsername._id.toString() !== existingEmail._id.toString()) {
+                return res.status(400).json({
+                    success: false,
+                    message: "This username is already taken. Please choose another username."
+                });
+            }
+
+            // Securely hash the new password & generate fresh OTP
+            const passwordHash = await bcrypt.hash(password, 10);
+            const otp = generateOTP();
+            const otpHashed = hashOTP(otp);
+
+            existingEmail.username = normalizedUsername;
+            existingEmail.passwordHash = passwordHash;
+            existingEmail.verificationOTPHash = otpHashed;
+            existingEmail.verificationOTPExpiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+            existingEmail.verificationAttempts = 0;
+            existingEmail.lastOTPResentAt = new Date();
+            existingEmail.status = "PENDING";
+
+            await existingEmail.save();
+
+            // Send verification email
+            try {
+                await sendVerificationEmail(existingEmail.email, otp, existingEmail.username);
+            } catch (emailErr) {
+                console.error("[register] Email delivery failed:", emailErr.message);
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: "Account created. A verification code has been sent to your email.",
+                userId: existingEmail._id
             });
         }
 
