@@ -166,4 +166,47 @@ describe("Media Upload Controller Unit Tests", () => {
             })
         );
     });
+
+    test("6. getCloudinaryConfig: Accurately parses CLOUDINARY_URL and trims whitespace", () => {
+        const origUrl = process.env.CLOUDINARY_URL;
+        try {
+            process.env.CLOUDINARY_URL = "  cloudinary://123456789012345:secretkey@mycloud  ";
+            const config = cloudinary.getCloudinaryConfig();
+            expect(config.isConfigured).toBe(true);
+            expect(config.useUrl).toBe(true);
+            expect(config.url).toBe("cloudinary://123456789012345:secretkey@mycloud");
+        } finally {
+            if (origUrl !== undefined) process.env.CLOUDINARY_URL = origUrl;
+            else delete process.env.CLOUDINARY_URL;
+        }
+    });
+
+    test("7. getCloudinaryConfig: Accurately parses individual credentials with quotes/whitespace trimmed", () => {
+        const origUrl = process.env.CLOUDINARY_URL;
+        const origName = process.env.CLOUDINARY_CLOUD_NAME;
+        const origKey = process.env.CLOUDINARY_API_KEY;
+        const origSecret = process.env.CLOUDINARY_API_SECRET;
+
+        try {
+            delete process.env.CLOUDINARY_URL;
+            process.env.CLOUDINARY_CLOUD_NAME = ' "anoy_cloud" ';
+            process.env.CLOUDINARY_API_KEY = ' "123456789012345" ';
+            process.env.CLOUDINARY_API_SECRET = ' "test_secret_12345" ';
+
+            const config = cloudinary.getCloudinaryConfig();
+            expect(config.isConfigured).toBe(true);
+            expect(config.cloud_name).toBe("anoy_cloud");
+            expect(config.api_key).toBe("123456789012345");
+            expect(config.api_secret).toBe("test_secret_12345");
+        } finally {
+            if (origUrl !== undefined) process.env.CLOUDINARY_URL = origUrl;
+            else delete process.env.CLOUDINARY_URL;
+            if (origName !== undefined) process.env.CLOUDINARY_CLOUD_NAME = origName;
+            else delete process.env.CLOUDINARY_CLOUD_NAME;
+            if (origKey !== undefined) process.env.CLOUDINARY_API_KEY = origKey;
+            else delete process.env.CLOUDINARY_API_KEY;
+            if (origSecret !== undefined) process.env.CLOUDINARY_API_SECRET = origSecret;
+            else delete process.env.CLOUDINARY_API_SECRET;
+        }
+    });
 });

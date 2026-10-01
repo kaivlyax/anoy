@@ -4,19 +4,58 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 
-// Configure Cloudinary if credentials exist in environment
-if (
-    process.env.CLOUDINARY_CLOUD_NAME &&
-    process.env.CLOUDINARY_API_KEY &&
-    process.env.CLOUDINARY_API_SECRET
-) {
-    cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_API_SECRET,
-        secure: true
-    });
-}
+
+/**
+ * Resolve Cloudinary configuration from environment variables safely.
+ * Supports both CLOUDINARY_URL and individual credentials (with whitespace/quote sanitization).
+ */
+const getCloudinaryConfig = () => {
+    const rawUrl = (process.env.CLOUDINARY_URL || "").trim().replace(/^["']|["']$/g, "");
+    if (rawUrl) {
+        return { isConfigured: true, useUrl: true, url: rawUrl };
+    }
+
+    const cloud_name = (process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUD_NAME || "").trim().replace(/^["']|["']$/g, "");
+    const api_key = (process.env.CLOUDINARY_API_KEY || process.env.CLOUDINARY_KEY || "").trim().replace(/^["']|["']$/g, "");
+    const api_secret = (process.env.CLOUDINARY_API_SECRET || process.env.CLOUDINARY_SECRET || "").trim().replace(/^["']|["']$/g, "");
+
+    if (cloud_name && api_key && api_secret) {
+        return { isConfigured: true, useUrl: false, cloud_name, api_key, api_secret };
+    }
+
+    return { isConfigured: false };
+};
+
+/**
+ * Configure Cloudinary instance with current environment variables.
+ */
+const configureCloudinary = () => {
+    const config = getCloudinaryConfig();
+    if (!config.isConfigured) return false;
+
+    try {
+        if (config.useUrl) {
+            cloudinary.config({
+                cloudinary_url: config.url,
+                secure: true
+            });
+        } else {
+            cloudinary.config({
+                cloud_name: config.cloud_name,
+                api_key: config.api_key,
+                api_secret: config.api_secret,
+                secure: true
+            });
+        }
+        return true;
+    } catch (err) {
+        console.error("[Cloudinary] Configuration error:", err.message || err);
+        return false;
+    }
+};
+
+// Initial configuration attempt on module load
+configureCloudinary();
 
 // Local uploads directory fallback
 const UPLOADS_DIR = path.join(__dirname, "../uploads");
@@ -66,16 +105,11 @@ const upload = multer({
  * @returns {Promise<{url: string, publicId: string, format: string, size: number, width?: number, height?: number, resourceType?: string}>}
  */
 const uploadMedia = async (buffer, originalname, mimetype) => {
-    const isCloudinaryConfigured = Boolean(
-        process.env.CLOUDINARY_CLOUD_NAME &&
-        process.env.CLOUDINARY_API_KEY &&
-        process.env.CLOUDINARY_API_SECRET
-    );
-
+    const isConfigured = configureCloudinary();
     const isVideo = mimetype && mimetype.startsWith("video/");
     const resourceType = isVideo ? "video" : "image";
 
-    if (isCloudinaryConfigured && process.env.NODE_ENV !== "test") {
+    if (isConfigured && process.env.NODE_ENV !== "test") {
         try {
             return await new Promise((resolve, reject) => {
                 const stream = cloudinary.uploader.upload_stream(
@@ -103,7 +137,10 @@ const uploadMedia = async (buffer, originalname, mimetype) => {
                 stream.end(buffer);
             });
         } catch (cloudErr) {
-            if (process.env.NODE_ENV === "production") throw cloudErr;
+            console.error("[Cloudinary] Upload failed:", cloudErr.message || cloudErr);
+            if (process.env.NODE_ENV === "production") {
+                throw new Error(cloudErr.message || "Failed to upload media to storage service.");
+            }
             console.warn("Cloudinary upload failed, falling back to local disk:", cloudErr.message || cloudErr);
         }
     }
@@ -134,6 +171,8 @@ module.exports = {
     cloudinary,
     upload,
     uploadMedia,
+    configureCloudinary,
+    getCloudinaryConfig,
     UPLOADS_DIR,
     ALLOWED_MIME_TYPES
 };
